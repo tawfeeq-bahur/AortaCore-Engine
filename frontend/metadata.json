@@ -1,0 +1,6 @@
+{
+  "name": "ScanDupe - Pro Duplicate File Finder",
+  "description": "A professional storage optimization tool for detecting and managing duplicate files with MD5 hashing and multithreaded scanning.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["File System Analysis", "Hashing Algorithms", "Java System Design"]
+}
