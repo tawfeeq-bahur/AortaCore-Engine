@@ -18,7 +18,8 @@ function createWindow() {
     height: 800,
     webPreferences: {
       nodeIntegration: true,
-      contextIsolation: false
+      contextIsolation: false,
+      webSecurity: false
     },
     title: 'ScanDupe - Duplicate File Finder',
     backgroundColor: '#0f172a'

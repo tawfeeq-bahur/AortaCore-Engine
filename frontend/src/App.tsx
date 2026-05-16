@@ -11,14 +11,15 @@ import {
   Database,
   Terminal,
   Code2,
+  History,
   AlertCircle
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import Dashboard from './components/Dashboard';
-import JavaLab from './components/JavaLab';
+import ScanHistory from './components/ScanHistory';
 import SettingsView from './components/SettingsView';
 
-export type View = 'dashboard' | 'java-lab' | 'settings';
+export type View = 'dashboard' | 'history' | 'settings';
 
 export default function App() {
   const [activeView, setActiveView] = useState<View>('dashboard');
@@ -44,10 +45,10 @@ export default function App() {
             onClick={() => setActiveView('dashboard')} 
           />
           <NavItem 
-            icon={<Code2 size={18} />} 
-            label="Java Lab" 
-            active={activeView === 'java-lab'} 
-            onClick={() => setActiveView('java-lab')} 
+            icon={<History size={18} />} 
+            label="Scan History" 
+            active={activeView === 'history'} 
+            onClick={() => setActiveView('history')} 
           />
           <NavItem 
             icon={<Settings size={18} />} 
@@ -81,14 +82,14 @@ export default function App() {
 
         <motion.div
           animate={{ 
-            opacity: activeView === 'java-lab' ? 1 : 0, 
-            y: activeView === 'java-lab' ? 0 : 10,
-            scale: activeView === 'java-lab' ? 1 : 0.98
+            opacity: activeView === 'history' ? 1 : 0, 
+            y: activeView === 'history' ? 0 : 10,
+            scale: activeView === 'history' ? 1 : 0.98
           }}
           transition={{ duration: 0.2 }}
-          className={`absolute inset-0 p-8 max-w-6xl mx-auto overflow-auto ${activeView === 'java-lab' ? 'pointer-events-auto z-10' : 'pointer-events-none z-0'}`}
+          className={`absolute inset-0 p-8 max-w-6xl mx-auto overflow-auto ${activeView === 'history' ? 'pointer-events-auto z-10' : 'pointer-events-none z-0'}`}
         >
-          <JavaLab />
+          <ScanHistory isActive={activeView === 'history'} />
         </motion.div>
 
         <motion.div

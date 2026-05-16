@@ -8,14 +8,24 @@ import {
   Trash2, 
   ChevronRight,
   Search,
-  HardDrive
+  HardDrive,
+  Eye,
+  PieChart,
+  ListFilter
 } from 'lucide-react';
 import { motion } from 'motion/react';
+
+interface DuplicateFile {
+  name: string;
+  path: string;
+  category: string;
+}
 
 interface DuplicateGroup {
   hash: string;
   size: number;
-  files: { name: string; path: string }[];
+  category: string;
+  files: DuplicateFile[];
 }
 
 const formatBytes = (bytes: number) => {
@@ -33,16 +43,40 @@ export default function Dashboard() {
   const [duplicates, setDuplicates] = useState<DuplicateGroup[]>([]);
   const [errorMsg, setErrorMsg] = useState('');
   const [selectedFiles, setSelectedFiles] = useState<Set<string>>(new Set());
+  const [categoryMap, setCategoryMap] = useState<Record<string, string>>({});
   const [isDeleting, setIsDeleting] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const groupsPerPage = 100;
+  
+  const [activeTab, setActiveTab] = useState<'list'|'analytics'>('list');
+  const [previewFile, setPreviewFile] = useState<string | null>(null);
+  const [scanProgress, setScanProgress] = useState<{filesScanned: number, bytesScanned: number, currentFile: string, phase: string} | null>(null);
 
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [scanTime, setScanTime] = useState<number | null>(null);
   const [deleteStats, setDeleteStats] = useState<{count: number, time: number} | null>(null);
 
-  const totalPages = Math.ceil(duplicates.length / groupsPerPage);
-  const paginatedDuplicates = duplicates.slice((currentPage - 1) * groupsPerPage, currentPage * groupsPerPage);
+  const sortedDuplicates = React.useMemo(() => {
+    if (selectedFiles.size === 0) return duplicates;
+    return [...duplicates].sort((a, b) => {
+      const aHasSelected = a.files.slice(1).some(f => selectedFiles.has(f.path));
+      const bHasSelected = b.files.slice(1).some(f => selectedFiles.has(f.path));
+      if (aHasSelected && !bHasSelected) return -1;
+      if (!aHasSelected && bHasSelected) return 1;
+      return 0;
+    });
+  }, [duplicates, selectedFiles]);
+
+  const totalPages = Math.ceil(sortedDuplicates.length / groupsPerPage);
+  const paginatedDuplicates = sortedDuplicates.slice((currentPage - 1) * groupsPerPage, currentPage * groupsPerPage);
+
+  const selectedSize = duplicates.reduce((acc, group) => {
+    let groupSelectedSize = 0;
+    group.files.slice(1).forEach(f => {
+      if (selectedFiles.has(f.path)) groupSelectedSize += group.size;
+    });
+    return acc + groupSelectedSize;
+  }, 0);
 
   const handleSelectAll = () => {
     const allDups = new Set<string>();
@@ -50,6 +84,39 @@ export default function Dashboard() {
       group.files.slice(1).forEach(f => allDups.add(f.path));
     });
     setSelectedFiles(allDups);
+  };
+
+  const handleSelectCategory = (category: string, isSelected: boolean) => {
+    setSelectedFiles(prev => {
+      const newSel = new Set(prev);
+      duplicates.forEach(group => {
+        group.files.slice(1).forEach(f => {
+          if (categoryMap[f.path] === category) {
+            if (isSelected) newSel.add(f.path);
+            else newSel.delete(f.path);
+          }
+        });
+      });
+      return newSel;
+    });
+  };
+
+  const isCategoryFullySelected = (category: string) => {
+    let allSelected = true;
+    let hasAny = false;
+    for (const group of duplicates) {
+      for (const f of group.files.slice(1)) {
+        if (categoryMap[f.path] === category) {
+          hasAny = true;
+          if (!selectedFiles.has(f.path)) {
+            allSelected = false;
+            break;
+          }
+        }
+      }
+      if (!allSelected) break;
+    }
+    return hasAny && allSelected;
   };
 
   const toggleSelection = (path: string) => {
@@ -76,7 +143,7 @@ export default function Dashboard() {
       const response = await fetch('http://localhost:8080/api/delete', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ paths: Array.from(selectedFiles), moveToTrash })
+        body: JSON.stringify({ paths: Array.from(selectedFiles), moveToTrash, bytesRecovered: selectedSize })
       });
       if (response.ok) {
         const data = await response.json();
@@ -126,6 +193,13 @@ export default function Dashboard() {
     setScanTime(null);
     setDeleteStats(null);
     
+    const progressInterval = setInterval(async () => {
+      try {
+        const res = await fetch('http://localhost:8080/api/scan/progress');
+        if (res.ok) setScanProgress(await res.json());
+      } catch (e) {}
+    }, 200);
+    
     const startTime = performance.now();
     try {
       const response = await fetch('http://localhost:8080/api/scan', {
@@ -144,6 +218,7 @@ export default function Dashboard() {
       
       // Data shape is { timeMs, duplicates: { hash: [ { path, size, hash } ] } }
       const newDuplicates: DuplicateGroup[] = [];
+      const newCategoryMap: Record<string, string> = {};
       let totalFiles = 0;
       let totalWastedSize = 0;
       
@@ -157,10 +232,15 @@ export default function Dashboard() {
            newDuplicates.push({
              hash: hash,
              size: size,
-             files: fileGroup.map((f: any) => ({
-               name: f.path.split('\\').pop() || f.path.split('/').pop(),
-               path: f.path
-             })).sort((a: any, b: any) => {
+             category: fileGroup[0].category || 'Others',
+             files: fileGroup.map((f: any) => {
+               newCategoryMap[f.path] = f.category || 'Others';
+               return {
+                 name: f.path.split('\\').pop() || f.path.split('/').pop(),
+                 path: f.path,
+                 category: f.category || 'Others'
+               };
+             }).sort((a: any, b: any) => {
                const depthA = (a.path.match(/[\\/]/g) || []).length;
                const depthB = (b.path.match(/[\\/]/g) || []).length;
                if (depthA !== depthB) return depthA - depthB;
@@ -172,6 +252,7 @@ export default function Dashboard() {
       });
       
       setDuplicates(newDuplicates);
+      setCategoryMap(newCategoryMap);
       setScanTime(data.timeMs || (performance.now() - startTime));
       setScanStats({
         files: totalFiles, // Total duplicate files
@@ -182,6 +263,8 @@ export default function Dashboard() {
     } catch (err) {
       setErrorMsg('Failed to connect to backend. Is the Java server running?');
     } finally {
+      clearInterval(progressInterval);
+      setScanProgress(null);
       setIsScanning(false);
     }
   };
@@ -220,7 +303,7 @@ export default function Dashboard() {
                 className={`px-4 py-3 text-[#E4E3E0] rounded font-mono text-xs transition-all flex items-center gap-2 ${selectedFiles.size > 0 ? 'bg-red-600 hover:bg-red-700 cursor-pointer' : 'bg-[#141414] opacity-50 cursor-not-allowed'}`}
               >
                 <Trash2 size={14} />
-                {isDeleting ? 'DELETING...' : `DELETE (${selectedFiles.size})`}
+                {isDeleting ? 'DELETING...' : `DELETE ${selectedFiles.size} (${formatBytes(selectedSize)})`}
               </button>
             </div>
           )}
@@ -233,9 +316,12 @@ export default function Dashboard() {
               INITIATE SCAN
             </button>
           ) : (
-            <div className="bg-[#141414]/10 px-6 py-3 rounded flex items-center gap-4 font-mono text-sm">
-              <Activity size={18} className="animate-pulse" />
-              <span>SCANNING SYSTEM...</span>
+            <div className="bg-[#141414]/10 px-6 py-3 rounded flex flex-col items-center justify-center font-mono text-sm min-w-[200px]">
+              <div className="flex items-center gap-4">
+                <Activity size={18} className="animate-pulse" />
+                <span>SCANNING...</span>
+              </div>
+              {scanProgress && <span className="text-[10px] opacity-70 mt-1">{scanProgress.phase}</span>}
             </div>
           )}
         </div>
@@ -244,10 +330,22 @@ export default function Dashboard() {
       {/* Progress Bar */}
       {(isScanning || isDeleting) && (
         <div className="space-y-2">
-          <div className="flex items-center gap-2 text-xs font-mono opacity-60 uppercase tracking-widest">
-            <Activity size={14} className="animate-pulse" />
-            {isScanning ? 'SCANNING FILE SYSTEM...' : 'PROCESSING DELETION...'}
+          <div className="flex justify-between items-center text-xs font-mono opacity-60 uppercase tracking-widest">
+            <div className="flex items-center gap-2">
+              <Activity size={14} className="animate-pulse" />
+              {isScanning ? 'SCANNING FILE SYSTEM...' : 'PROCESSING DELETION...'}
+            </div>
+            {isScanning && scanProgress && (
+              <span className="text-right">
+                {scanProgress.filesScanned.toLocaleString()} files / {formatBytes(scanProgress.bytesScanned)}
+              </span>
+            )}
           </div>
+          {isScanning && scanProgress && scanProgress.currentFile && (
+            <div className="text-[9px] font-mono opacity-40 truncate" title={scanProgress.currentFile}>
+              {scanProgress.currentFile}
+            </div>
+          )}
           <div className="h-1 bg-[#141414]/10 w-full rounded-full overflow-hidden">
             <motion.div 
               className={`h-full ${isDeleting ? 'bg-red-600' : 'bg-[#141414]'}`}
@@ -267,14 +365,55 @@ export default function Dashboard() {
         <StatCard icon={<ShieldCheck size={16} />} label="CLEANUP SAFETY" value="99.8%" accent />
       </div>
 
+      {/* Smart Category Selection */}
+      {duplicates.length > 0 && (
+        <div className="mt-8 mb-4 p-4 border border-[#141414]/20 rounded-lg bg-white/30 flex flex-wrap items-center justify-between gap-4 font-mono text-xs shadow-sm">
+          <div className="flex flex-wrap items-center gap-4">
+            <span className="font-bold opacity-70 border-r border-[#141414]/20 pr-4">QUICK SELECT:</span>
+            {Array.from(new Set(Object.values(categoryMap))).sort().map(cat => {
+              const isSelected = isCategoryFullySelected(cat);
+              const isDangerous = cat === 'Code Files' || cat === 'Modules & Packages';
+              return (
+                <label key={cat} className={`flex items-center gap-2 cursor-pointer p-2 rounded transition-colors ${isDangerous ? 'hover:bg-red-500/10' : 'hover:bg-[#141414]/5'}`}>
+                  <input 
+                    type="checkbox" 
+                    checked={isSelected}
+                    onChange={(e) => handleSelectCategory(cat, e.target.checked)}
+                    className={`w-4 h-4 cursor-pointer ${isDangerous ? 'accent-red-600' : 'accent-[#141414]'}`}
+                  />
+                  <span className={isDangerous ? 'text-red-600 font-bold' : ''}>
+                    {cat}
+                  </span>
+                </label>
+              )
+            })}
+          </div>
+          <div className="flex border border-[#141414]/20 rounded overflow-hidden">
+            <button 
+              onClick={() => setActiveTab('list')}
+              className={`px-4 py-2 flex items-center gap-2 ${activeTab === 'list' ? 'bg-[#141414] text-[#E4E3E0]' : 'hover:bg-[#141414]/10'}`}
+            >
+              <ListFilter size={14} /> List View
+            </button>
+            <button 
+              onClick={() => setActiveTab('analytics')}
+              className={`px-4 py-2 flex items-center gap-2 ${activeTab === 'analytics' ? 'bg-[#141414] text-[#E4E3E0]' : 'hover:bg-[#141414]/10'}`}
+            >
+              <PieChart size={14} /> Analytics
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Results Table Section */}
-      <section className="mt-12 bg-white/50 border border-[#141414] rounded-lg overflow-hidden">
+      {duplicates.length > 0 && activeTab === 'list' && (
+      <section className="mt-6 bg-white/50 border border-[#141414] rounded-lg overflow-hidden">
         <div className="grid grid-cols-12 gap-4 p-4 bg-[#141414]/5 border-b border-[#141414] text-[10px] uppercase font-mono tracking-wider opacity-60">
           <div className="col-span-1 flex justify-center">SELECT</div>
           <div className="col-span-4">FILE IDENTITY</div>
-          <div className="col-span-3">LOCATION</div>
-          <div className="col-span-2">SIZE</div>
-          <div className="col-span-2">MD5 HASH</div>
+          <div className="col-span-4">LOCATION</div>
+          <div className="col-span-1">SIZE</div>
+          <div className="col-span-2 text-right">ACTIONS</div>
         </div>
 
         <div className="divide-y divide-[#141414]/10">
@@ -303,14 +442,25 @@ export default function Dashboard() {
                      {fIdx === 0 && <span className="text-[10px] bg-[#141414]/10 group-hover:bg-[#E4E3E0]/20 px-1 py-0.5 rounded text-xs">ORIGINAL</span>}
                      {file.name}
                   </div>
-                  <div className="col-span-3 text-[10px] font-mono opacity-60 group-hover:opacity-100 truncate italic">
+                  <div className="col-span-4 text-[10px] font-mono opacity-60 group-hover:opacity-100 truncate italic">
                     {file.path}
                   </div>
-                  <div className="col-span-2 text-xs font-mono">
+                  <div className="col-span-1 text-xs font-mono">
                     {formatBytes(group.size)}
                   </div>
-                  <div className="col-span-2 text-[10px] font-mono bg-[#141414]/5 group-hover:bg-[#E4E3E0]/10 px-2 py-1 rounded truncate">
-                    {group.hash}
+                  <div className="col-span-2 flex justify-end gap-2">
+                    {file.category === 'Images' && (
+                      <button 
+                        onClick={() => setPreviewFile(file.path)}
+                        className="p-1 rounded hover:bg-[#E4E3E0]/20 transition-colors"
+                        title="Preview Image"
+                      >
+                        <Eye size={16} />
+                      </button>
+                    )}
+                    <div className="text-[10px] font-mono bg-[#141414]/5 group-hover:bg-[#E4E3E0]/10 px-2 py-1 rounded truncate opacity-60 max-w-[80px]">
+                      {group.hash.substring(0, 8)}...
+                    </div>
                   </div>
                 </div>
               ))}
@@ -321,9 +471,46 @@ export default function Dashboard() {
           )})}
         </div>
       </section>
+      )}
+
+      {/* Analytics Section */}
+      {duplicates.length > 0 && activeTab === 'analytics' && (
+        <section className="mt-6 p-8 bg-white/50 border border-[#141414] rounded-lg">
+          <div className="flex items-center gap-3 mb-8">
+            <PieChart size={24} />
+            <h3 className="font-serif italic text-2xl">Storage Analytics</h3>
+          </div>
+          
+          <div className="space-y-6">
+            {Object.entries(
+              duplicates.reduce((acc, group) => {
+                acc[group.category] = (acc[group.category] || 0) + (group.size * (group.files.length - 1));
+                return acc;
+              }, {} as Record<string, number>)
+            ).sort((a, b) => b[1] - a[1]).map(([cat, size]) => {
+              const percentage = (size / duplicates.reduce((sum, g) => sum + g.size * (g.files.length - 1), 0)) * 100;
+              const isDangerous = cat === 'Code Files' || cat === 'Modules & Packages';
+              return (
+                <div key={cat} className="space-y-2">
+                  <div className="flex justify-between font-mono text-xs">
+                    <span className={isDangerous ? 'text-red-600 font-bold' : ''}>{cat}</span>
+                    <span className="font-bold">{formatBytes(size)} ({percentage.toFixed(1)}%)</span>
+                  </div>
+                  <div className="h-4 bg-[#141414]/10 w-full rounded-full overflow-hidden">
+                    <div 
+                      className={`h-full ${isDangerous ? 'bg-red-600' : 'bg-[#141414]'}`} 
+                      style={{ width: `${percentage}%` }}
+                    />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      )}
 
       {/* Pagination Controls */}
-      {totalPages > 1 && (
+      {activeTab === 'list' && totalPages > 1 && (
         <div className="flex justify-center items-center gap-4 py-6 text-sm font-mono opacity-80">
           <button 
             disabled={currentPage === 1}
@@ -357,8 +544,39 @@ export default function Dashboard() {
             </div>
             
             <p className="font-sans text-sm opacity-80 leading-relaxed">
-              You are about to delete <strong>{selectedFiles.size}</strong> duplicate files. How would you like to proceed?
+              You are about to delete <strong>{selectedFiles.size}</strong> duplicate files, which will free up <strong>{formatBytes(selectedSize)}</strong> of space. How would you like to proceed?
             </p>
+
+            {/* Category Breakdown */}
+            <div className="bg-[#141414]/5 p-4 rounded border border-[#141414]/10">
+              <div className="flex justify-between mb-2">
+                <h4 className="font-mono text-[10px] uppercase tracking-widest opacity-60">Selected File Breakdown</h4>
+                <span className="font-mono text-[10px] font-bold">{formatBytes(selectedSize)} Selected</span>
+              </div>
+              <div className="grid grid-cols-2 gap-2 font-mono text-xs">
+                {Object.entries(
+                  Array.from(selectedFiles).reduce((acc, path) => {
+                    const cat = categoryMap[path] || 'Others';
+                    acc[cat] = (acc[cat] || 0) + 1;
+                    return acc;
+                  }, {} as Record<string, number>)
+                ).map(([cat, count]) => {
+                  const isDangerous = cat === 'Code Files' || cat === 'Modules & Packages';
+                  return (
+                    <div key={cat} className={`flex justify-between p-1 border-b border-[#141414]/5 ${isDangerous ? 'text-red-600 font-bold' : ''}`}>
+                      <span>{cat}</span>
+                      <span>{count}</span>
+                    </div>
+                  );
+                })}
+              </div>
+              {Array.from(selectedFiles).some(p => categoryMap[p] === 'Code Files' || categoryMap[p] === 'Modules & Packages') && (
+                <div className="mt-3 text-[10px] text-red-600 font-bold bg-red-100/50 p-2 rounded flex items-center gap-2">
+                  <ShieldCheck size={14} />
+                  WARNING: Deleting code files or modules might break your projects!
+                </div>
+              )}
+            </div>
             
             <div className="flex flex-col gap-3 font-mono text-xs">
               <button 
@@ -383,6 +601,31 @@ export default function Dashboard() {
               >
                 CANCEL
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Image Preview Modal */}
+      {previewFile && (
+        <div 
+          className="fixed inset-0 bg-black/80 z-[100] flex items-center justify-center p-8 backdrop-blur-sm cursor-pointer" 
+          onClick={() => setPreviewFile(null)}
+        >
+          <div className="bg-[#141414] border border-white/20 p-2 rounded shadow-2xl relative" onClick={e => e.stopPropagation()}>
+            <button 
+              className="absolute -top-4 -right-4 bg-red-600 text-white w-8 h-8 rounded-full flex items-center justify-center font-bold shadow-lg"
+              onClick={() => setPreviewFile(null)}
+            >
+              ✕
+            </button>
+            <img 
+              src={`file:///${previewFile.replace(/\\/g, '/')}`} 
+              className="max-w-[80vw] max-h-[80vh] object-contain rounded" 
+              alt="Preview" 
+            />
+            <div className="absolute bottom-4 left-4 bg-black/70 text-white font-mono text-xs px-3 py-1 rounded">
+              {previewFile}
             </div>
           </div>
         </div>
