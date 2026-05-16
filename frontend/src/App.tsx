@@ -23,9 +23,28 @@ export type View = 'dashboard' | 'history' | 'settings';
 
 export default function App() {
   const [activeView, setActiveView] = useState<View>('dashboard');
+  const [theme, setTheme] = useState(localStorage.getItem('appTheme') || 'light');
+
+  // Listen for theme changes from SettingsView
+  useEffect(() => {
+    const handleStorage = () => {
+      setTheme(localStorage.getItem('appTheme') || 'light');
+    };
+    window.addEventListener('storage', handleStorage);
+    // Custom event for same-window updates
+    window.addEventListener('theme-changed', handleStorage);
+    return () => {
+      window.removeEventListener('storage', handleStorage);
+      window.removeEventListener('theme-changed', handleStorage);
+    };
+  }, []);
+
+  let themeClass = '';
+  if (theme === 'dark') themeClass = 'invert hue-rotate-180';
+  if (theme === 'hacker') themeClass = 'invert sepia hue-rotate-60 saturate-200 contrast-125';
 
   return (
-    <div className="flex h-screen bg-[#E4E3E0] text-[#141414] font-sans selection:bg-[#141414] selection:text-[#E4E3E0]">
+    <div className={`flex h-screen bg-[#E4E3E0] text-[#141414] font-sans selection:bg-[#141414] selection:text-[#E4E3E0] transition-all duration-500 ${themeClass}`}>
       {/* Sidebar - Technical Grid Style */}
       <nav className="w-64 border-r border-[#141414] flex flex-col pt-8 bg-[#E4E3E0] relative z-10">
         <div className="px-6 mb-12">

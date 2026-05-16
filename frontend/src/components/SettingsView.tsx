@@ -5,11 +5,20 @@ export default function SettingsView() {
   const [scheduleMode, setScheduleMode] = useState(localStorage.getItem('scheduleMode') || 'disabled');
   const [schedulePath, setSchedulePath] = useState(localStorage.getItem('schedulePath') || 'D:\\');
   const [isScheduling, setIsScheduling] = useState(false);
+  const [theme, setTheme] = useState(localStorage.getItem('appTheme') || 'light');
 
   useEffect(() => {
     localStorage.setItem('scheduleMode', scheduleMode);
     localStorage.setItem('schedulePath', schedulePath);
   }, [scheduleMode, schedulePath]);
+
+  const handleThemeChange = (newTheme: string) => {
+    // If the same theme is clicked again, default to light
+    const finalTheme = theme === newTheme ? 'light' : newTheme;
+    setTheme(finalTheme);
+    localStorage.setItem('appTheme', finalTheme);
+    window.dispatchEvent(new Event('theme-changed'));
+  };
 
   const handleApplySchedule = async () => {
     setIsScheduling(true);
@@ -132,8 +141,18 @@ export default function SettingsView() {
           <section className="space-y-4">
             <h3 className="text-[10px] font-mono uppercase tracking-[0.2em] opacity-40 flex items-center gap-2"><SettingsIcon size={12}/> General Appearance</h3>
             <div className="space-y-2">
-              <ToggleItem label="Dark Mode" description="Optimized for long sessions." />
-              <ToggleItem label="Hacker Mode" description="Terminal-inspired high contrast." />
+              <ToggleItem 
+                label="Dark Mode" 
+                description="Optimized for long sessions." 
+                forcedOn={theme === 'dark'}
+                onToggle={() => handleThemeChange('dark')}
+              />
+              <ToggleItem 
+                label="Hacker Mode" 
+                description="Terminal-inspired high contrast." 
+                forcedOn={theme === 'hacker'}
+                onToggle={() => handleThemeChange('hacker')}
+              />
               <ToggleItem label="Enable Animations" description="Display live scan effects." defaultOn />
             </div>
           </section>
@@ -190,16 +209,27 @@ function SectionHeader({ icon, title, desc }: { icon: React.ReactNode, title: st
   );
 }
 
-function ToggleItem({ label, description, defaultOn }: { label: string, description: string, defaultOn?: boolean }) {
+function ToggleItem({ label, description, defaultOn, forcedOn, onToggle }: { label: string, description: string, defaultOn?: boolean, forcedOn?: boolean, onToggle?: () => void }) {
   const [on, setOn] = React.useState(defaultOn || false);
+  
+  const isActuallyOn = forcedOn !== undefined ? forcedOn : on;
+
+  const handleClick = () => {
+    if (onToggle) {
+      onToggle();
+    } else {
+      setOn(!on);
+    }
+  };
+
   return (
-    <div className="flex items-center justify-between p-4 bg-white/40 border border-[#141414]/10 rounded-lg hover:border-[#141414]/30 transition-all cursor-pointer group" onClick={() => setOn(!on)}>
+    <div className="flex items-center justify-between p-4 bg-white/40 border border-[#141414]/10 rounded-lg hover:border-[#141414]/30 transition-all cursor-pointer group" onClick={handleClick}>
       <div className="space-y-1 pr-4">
         <h4 className="font-mono text-[11px] font-bold uppercase">{label}</h4>
         <p className="text-[10px] opacity-60 font-sans leading-tight">{description}</p>
       </div>
-      <div className={`w-10 h-5 rounded-full transition-all flex items-center px-1 flex-shrink-0 ${on ? 'bg-green-700' : 'bg-[#141414]/20'}`}>
-        <div className={`w-3 h-3 rounded-full bg-white shadow-sm transition-all ${on ? 'translate-x-5' : 'translate-x-0'}`} />
+      <div className={`w-10 h-5 rounded-full transition-all flex items-center px-1 flex-shrink-0 ${isActuallyOn ? 'bg-green-700' : 'bg-[#141414]/20'}`}>
+        <div className={`w-3 h-3 rounded-full bg-white shadow-sm transition-all ${isActuallyOn ? 'translate-x-5' : 'translate-x-0'}`} />
       </div>
     </div>
   );
