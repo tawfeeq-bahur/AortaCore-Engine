@@ -13,7 +13,8 @@ import {
   Code2,
   History,
   AlertCircle,
-  Target
+  Target,
+  Eraser
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import Dashboard from './components/Dashboard';
@@ -21,8 +22,9 @@ import ScanHistory from './components/ScanHistory';
 import SettingsView from './components/SettingsView';
 import SystemMonitor from './components/SystemMonitor';
 import StorageRadar from './components/StorageRadar';
+import JunkSweeper from './components/JunkSweeper';
 
-export type View = 'monitor' | 'dashboard' | 'radar' | 'history' | 'settings';
+export type View = 'monitor' | 'dashboard' | 'radar' | 'junk' | 'history' | 'settings';
 
 export default function App() {
   const [activeView, setActiveView] = useState<View>('monitor');
@@ -77,6 +79,12 @@ export default function App() {
             label="Storage Radar" 
             active={activeView === 'radar'} 
             onClick={() => setActiveView('radar')} 
+          />
+          <NavItem 
+            icon={<Eraser size={18} />} 
+            label="Junk Sweeper" 
+            active={activeView === 'junk'} 
+            onClick={() => setActiveView('junk')} 
           />
           <NavItem 
             icon={<History size={18} />} 
@@ -136,6 +144,18 @@ export default function App() {
           className={`absolute inset-0 p-8 max-w-6xl mx-auto overflow-auto ${activeView === 'radar' ? 'pointer-events-auto z-10' : 'pointer-events-none z-0'}`}
         >
           <StorageRadar />
+        </motion.div>
+
+        <motion.div
+          animate={{ 
+            opacity: activeView === 'junk' ? 1 : 0, 
+            y: activeView === 'junk' ? 0 : 10,
+            scale: activeView === 'junk' ? 1 : 0.98
+          }}
+          transition={{ duration: 0.2 }}
+          className={`absolute inset-0 p-8 max-w-6xl mx-auto overflow-auto ${activeView === 'junk' ? 'pointer-events-auto z-10' : 'pointer-events-none z-0'}`}
+        >
+          <JunkSweeper />
         </motion.div>
 
         <motion.div
