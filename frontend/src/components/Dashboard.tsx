@@ -3,7 +3,7 @@ import {
   Activity, ShieldCheck, Database, Trash2, 
   Search, HardDrive, PieChart, ListFilter, ChevronRight,
   Image as ImageIcon, Film, FileText, Code2, File,
-  Hash, MapPin, X, Fingerprint, Layers, Folder
+  MapPin, X, Fingerprint, Layers, Folder, Download, AlertTriangle
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -70,8 +70,16 @@ export default function Dashboard() {
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [scanTime, setScanTime] = useState<number | null>(null);
   const [deleteStats, setDeleteStats] = useState<{count: number, time: number} | null>(null);
+  const [excludeSystemFolders, setExcludeSystemFolders] = useState(true);
+  
   const scanRunRef = React.useRef(0);
   const cancelRequestedRef = React.useRef(false);
+
+  // Detect if C: drive is selected
+  const isCDriveRoot = () => {
+    const clean = scanPath.trim().toUpperCase();
+    return clean === 'C:\\' || clean === 'C:' || clean === 'C';
+  };
 
   const sortedDuplicates = React.useMemo(() => {
     if (selectedFiles.size === 0) return duplicates;
@@ -148,6 +156,36 @@ export default function Dashboard() {
   const handleDeleteSelected = () => {
     if (selectedFiles.size === 0) return;
     setShowDeleteModal(true);
+  };
+
+  const handleDownloadReport = async () => {
+    try {
+      const response = await fetch('http://localhost:8080/api/report/download');
+      if (!response.ok) {
+        let errorMsg = 'Failed to download report';
+        try {
+          const data = await response.json();
+          errorMsg = data.error || errorMsg;
+        } catch (e) {
+          errorMsg = `HTTP ${response.status}: ${response.statusText}`;
+        }
+        setErrorMsg(errorMsg);
+        return;
+      }
+      
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `ScanReport_${new Date().toISOString().slice(0, 10)}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(link);
+      setErrorMsg(''); // Clear error on success
+    } catch (err) {
+      setErrorMsg('Failed to download report: ' + (err instanceof Error ? err.message : 'Unknown error'));
+    }
   };
 
   const confirmDelete = async (moveToTrash: boolean) => {
@@ -227,7 +265,7 @@ export default function Dashboard() {
       const response = await fetch('http://localhost:8080/api/scan', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ path: scanPath })
+        body: JSON.stringify({ path: scanPath, excludeSystemFolders: excludeSystemFolders })
       });
       
       const data = await response.json();
@@ -328,67 +366,99 @@ export default function Dashboard() {
 
   const reclaimableValue = Number(scanStats.totalSize) || 0;
 
+  // Handle file actions
+  const handleFileAction = (action: string, filePath: string) => {
+    const electron = (window as any).require ? (window as any).require('electron') : null;
+    const ipc = electron?.ipcRenderer;
+    
+    switch(action) {
+      case 'Open':
+        if (ipc) ipc.invoke('open-file', filePath);
+        break;
+      case 'Reveal':
+        if (ipc) ipc.invoke('reveal-file', filePath);
+        break;
+      case 'Hash':
+        // Copy hash to clipboard
+        if (selectedFilePreview) {
+          navigator.clipboard.writeText(selectedFilePreview.group.hash);
+        }
+        break;
+    }
+  };
+
   return (
-    <div className="space-y-8 pb-12 relative min-h-screen overflow-x-hidden">
+    <div className="space-y-8 pb-12 relative min-h-screen overflow-x-hidden w-full">
       
       {/* 1. TOP ACTION BAR HIERARCHY */}
-      <header className="flex flex-col gap-6 pb-6 border-b border-[#141414]/10 relative z-20">
-        <div className="flex justify-between items-start">
-          <div className="flex-1 max-w-2xl">
-            <h2 className="font-serif italic text-4xl mb-4 text-[#141414]">System Intelligence</h2>
-            <div className="flex bg-white/40 border border-[#141414]/10 p-2 rounded-xl backdrop-blur-md shadow-sm focus-within:border-[#D6B98C] focus-within:shadow-[0_0_15px_rgba(214,185,140,0.1)] transition-all">
-              <input 
-                type="text" 
-                value={scanPath}
-                onChange={(e) => setScanPath(e.target.value)}
-                className="flex-1 bg-transparent border-none outline-none font-mono text-sm uppercase px-4 text-[#141414] placeholder:opacity-40"
-                placeholder="ENTER TARGET DIRECTORY..."
-              />
-              <button onClick={selectFolder} aria-label="Select Folder" title="Select folder" className="px-3 py-2 rounded-md hover:bg-[#141414]/5 transition-colors">
-                <Folder size={16} />
-              </button>
-              <button 
-                onClick={handleStartScan}
-                disabled={isScanning}
-                className="bg-[#141414] text-[#E4E3E0] px-8 py-3 rounded-lg flex items-center gap-2 hover:bg-[#141414]/90 hover:scale-[1.02] active:scale-[0.98] transition-all font-mono text-xs uppercase tracking-widest shadow-md"
+      <header className="flex flex-col gap-4 pb-6 border-b border-[#141414]/10 relative z-20">
+        <h2 className="font-serif italic text-4xl text-[#141414]">System Intelligence</h2>
+        
+        <div className="flex items-center gap-4">
+          {/* Search/Path Input Section */}
+          <div className="flex-1 flex bg-white/40 border border-[#141414]/10 p-2 rounded-xl backdrop-blur-md shadow-sm focus-within:border-[#D6B98C] focus-within:shadow-[0_0_15px_rgba(214,185,140,0.1)] transition-all">
+            <input 
+              type="text" 
+              value={scanPath}
+              onChange={(e) => setScanPath(e.target.value)}
+              className="flex-1 bg-transparent border-none outline-none font-mono text-sm uppercase px-4 text-[#141414] placeholder:opacity-40"
+              placeholder="ENTER TARGET DIRECTORY..."
+            />
+            <button onClick={selectFolder} aria-label="Select Folder" title="Select folder" className="px-3 py-2 rounded-md hover:bg-[#141414]/5 transition-colors">
+              <Folder size={16} />
+            </button>
+            <button 
+              onClick={handleStartScan}
+              disabled={isScanning}
+              className="bg-[#141414] text-[#E4E3E0] px-8 py-3 rounded-lg flex items-center gap-2 hover:bg-[#141414]/90 hover:scale-[1.02] active:scale-[0.98] transition-all font-mono text-xs uppercase tracking-widest shadow-md"
+            >
+              {isScanning ? <><Activity size={14} className="animate-spin" /> SCANNING</> : <><Search size={14} /> ANALYZE PATH</>}
+            </button>
+            {isScanning && (
+              <button
+                onClick={requestStop}
+                disabled={cancelRequested}
+                className="ml-2 bg-red-600 text-white px-6 py-3 rounded-lg flex items-center gap-2 hover:bg-red-700 active:scale-[0.98] transition-all font-mono text-xs uppercase tracking-widest shadow-md disabled:opacity-60"
               >
-                {isScanning ? <><Activity size={14} className="animate-spin" /> SCANNING</> : <><Search size={14} /> ANALYZE PATH</>}
+                <X size={14} /> {cancelRequested ? 'STOPPING' : 'STOP'}
               </button>
-              {isScanning && (
-                <button
-                  onClick={requestStop}
-                  disabled={cancelRequested}
-                  className="ml-2 bg-red-600 text-white px-6 py-3 rounded-lg flex items-center gap-2 hover:bg-red-700 active:scale-[0.98] transition-all font-mono text-xs uppercase tracking-widest shadow-md disabled:opacity-60"
-                >
-                  <X size={14} /> {cancelRequested ? 'STOPPING' : 'STOP'}
-                </button>
-              )}
-            </div>
-            {errorMsg && <p className="text-red-500 text-xs font-mono mt-2 ml-2">{errorMsg}</p>}
-            <div className="flex gap-4 font-mono text-[10px] uppercase opacity-50 mt-2 ml-2">
-              {scanTime !== null && <span>Fetch Time: {(scanTime / 1000).toFixed(2)}s</span>}
-              {deleteStats !== null && <span className="text-red-600 font-bold">Deleted {deleteStats.count} files in {(deleteStats.time / 1000).toFixed(2)}s</span>}
-            </div>
+            )}
           </div>
 
-          {/* 2. SECONDARY ACTIONS (Muted Red) */}
-          {duplicates.length > 0 && (
-            <div className="flex flex-col items-end gap-3 mt-4">
-              <div className="font-mono text-[10px] uppercase tracking-widest opacity-60">Bulk Control</div>
-              <div className="flex gap-2">
-                <button onClick={handleSelectAll} className="px-4 py-3 bg-white/40 border border-[#141414]/10 hover:bg-[#141414]/5 rounded-lg font-mono text-xs transition-colors text-[#141414]">
-                  SELECT ALL
-                </button>
-                <button 
-                  onClick={handleDeleteSelected}
-                  disabled={selectedFiles.size === 0 || isDeleting}
-                  className={`px-6 py-3 rounded-lg font-mono text-xs transition-all flex items-center gap-2 ${selectedFiles.size > 0 ? 'bg-red-600 text-white hover:bg-[#9a3d3b] shadow-lg shadow-[#B86A6A]/20 hover:scale-[1.02] active:scale-[0.98]' : 'bg-[#141414]/5 text-[#141414]/40 cursor-not-allowed border border-[#141414]/10'}`}
-                >
-                  <Trash2 size={14} /> PURGE SELECTED ({selectedFiles.size})
-                </button>
+          {/* C: DRIVE WARNING - COMPACT BANNER */}
+          {isCDriveRoot() && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              className="bg-gradient-to-r from-amber-600 to-orange-600 text-white px-4 py-3 rounded-xl flex items-center justify-between gap-4 text-sm shadow-sm"
+            >
+              <div className="flex items-center gap-3 flex-1 min-w-0">
+                <AlertTriangle size={16} className="shrink-0" />
+                <div className="min-w-0">
+                  <div className="font-semibold truncate">SafeScan Protected - C: drive scan detected</div>
+                  <div className="text-xs text-white/85 truncate">
+                    Smart Filter keeps system files out of deletion flow.
+                  </div>
+                </div>
               </div>
-            </div>
+
+              <label className="flex items-center gap-2 cursor-pointer hover:bg-white/15 px-3 py-1.5 rounded-lg transition shrink-0">
+                <input
+                  type="checkbox"
+                  checked={excludeSystemFolders}
+                  onChange={(e) => setExcludeSystemFolders(e.target.checked)}
+                  className="rounded w-3.5 h-3.5"
+                />
+                <span className="text-[10px] font-mono uppercase tracking-widest">Smart Filter</span>
+              </label>
+            </motion.div>
           )}
+        </div>
+
+        {errorMsg && <p className="text-red-500 text-xs font-mono mt-2 ml-2">{errorMsg}</p>}
+        <div className="flex gap-4 font-mono text-[10px] uppercase opacity-50 ml-2">
+          {scanTime !== null && <span>Fetch Time: {(scanTime / 1000).toFixed(2)}s</span>}
+          {deleteStats !== null && <span className="text-red-600 font-bold">Deleted {deleteStats.count} files in {(deleteStats.time / 1000).toFixed(2)}s</span>}
         </div>
       </header>
 
@@ -416,13 +486,13 @@ export default function Dashboard() {
         <StatCard icon={<HardDrive size={16} />} label="FILES ANALYZED" value={scanStats.files.toLocaleString()} />
         <StatCard icon={<Layers size={16} />} label="DUPLICATE CLUSTERS" value={scanStats.duplicates} />
         {/* 8. SPACE SAVED VISUALIZATION */}
-        <div className="border border-[#141414]/10 p-4 rounded-xl bg-white/40 hover:bg-[#141414]/5 transition-all relative overflow-hidden group">
+        <div className="border border-[#141414]/10 p-4 rounded-xl min-h-[115px] bg-white/40 hover:bg-[#141414]/5 transition-all relative overflow-hidden group">
           <div className="absolute top-0 left-0 w-full h-1 bg-[#141414]/30 group-hover:bg-[#141414]/80 transition-colors" />
           <div className="flex items-center gap-2 opacity-50 mb-2">
             <Database size={14} />
             <span className="text-[9px] font-mono uppercase tracking-widest">RECLAIMABLE STORAGE</span>
           </div>
-          <div className="text-3xl font-serif italic text-[#141414] flex items-center gap-3">
+          <div className="text-2xl font-serif italic text-[#141414] flex items-center gap-3">
              {scanStats.totalSize} GB
           </div>
           {reclaimableValue > 0 && (
@@ -489,29 +559,28 @@ export default function Dashboard() {
         )}
       </AnimatePresence>
 
-      {/* 6. FILTER CHIPS & 5. ANALYTICS TOGGLE */}
+      {/* FILTER CHIPS + VIEW TOGGLE */}
       {duplicates.length > 0 && (
-        <div className="flex flex-col md:flex-row items-start md:items-center justify-between border-b border-[#141414]/10 pb-6 gap-4 mt-6">
+        <div className="flex flex-col xl:flex-row items-start xl:items-center justify-between border-b border-[#141414]/10 pb-4 gap-4 mt-6">
           <div className="flex flex-wrap gap-2 items-center">
-             <span className="font-mono text-[10px] uppercase opacity-50 tracking-widest mr-2">SMART FILTERS:</span>
-             {Array.from(new Set(Object.values(categoryMap))).sort().map(cat => {
-               const isSelected = isCategoryFullySelected(cat);
-               return (
-                 <button
-                   key={cat}
-                   onClick={() => handleSelectCategory(cat, !isSelected)}
-                   className={`px-4 py-1.5 rounded-full font-mono text-[10px] uppercase tracking-widest transition-all duration-300 border flex items-center gap-2
-                    ${isSelected 
-                      ? 'bg-[#141414]/10 border-[#D6B98C] text-[#141414] shadow-[0_0_15px_rgba(214,185,140,0.1)]' 
-                      : 'bg-white/40 border-[#141414]/10 text-[#141414]/60 hover:border-[#141414]/10 hover:bg-[#141414]/5'}`}
-                 >
-                   {getCategoryIcon(cat, 12)}
-                   {cat}
-                 </button>
-               )
-             })}
+            {Array.from(new Set(Object.values(categoryMap))).sort().map(cat => {
+              const isSelected = isCategoryFullySelected(cat);
+              return (
+                <button
+                  key={cat}
+                  onClick={() => handleSelectCategory(cat, !isSelected)}
+                  className={`px-4 py-1.5 rounded-full font-mono text-[10px] uppercase tracking-widest transition-all duration-300 border flex items-center gap-2
+                   ${isSelected 
+                     ? 'bg-[#141414]/10 border-[#D6B98C] text-[#141414] shadow-[0_0_15px_rgba(214,185,140,0.1)]' 
+                     : 'bg-white/40 border-[#141414]/10 text-[#141414]/60 hover:border-[#141414]/10 hover:bg-[#141414]/5'}`}
+                >
+                  {getCategoryIcon(cat, 12)}
+                  {cat}
+                </button>
+              )
+            })}
           </div>
-          
+
           <div className="bg-[#141414]/5 p-1 rounded-full flex font-mono text-xs relative shadow-inner">
             <motion.div 
               className="absolute top-1 bottom-1 w-[calc(50%-4px)] bg-[#141414] rounded-full shadow-md z-0"
@@ -529,13 +598,37 @@ export default function Dashboard() {
       )}
 
       {/* MAIN CONTENT AREA */}
-      <div className="flex gap-8 relative items-start pr-4 md:pr-[380px]">
+      <div className="flex gap-8 relative items-start w-full transition-all duration-300">
 
         {/* LEFT/MAIN LIST: 3. CLUSTER CARDS */}
-        <div className={`flex-1 min-w-0 transition-all duration-500`}>
+        <div className={`flex-1 min-w-0 transition-all duration-300`}>
           {duplicates.length > 0 && activeTab === 'list' && (
             <div className="space-y-6 px-4 pb-2">
-              <div className="h-3" />
+              <div className="flex items-end justify-between gap-4 pt-2 pb-2">
+                <div className="min-w-0">
+                  <div className="font-mono text-[10px] uppercase tracking-widest opacity-50">Duplicate Clusters</div>
+                  <div className="font-serif italic text-2xl text-[#141414]">{scanStats.duplicates.toLocaleString()} clusters</div>
+                </div>
+                <div className="flex items-center gap-2 shrink-0 flex-wrap justify-end">
+                  <button onClick={handleSelectAll} className="px-4 py-2 bg-white/40 border border-[#141414]/10 hover:bg-[#141414]/5 rounded-lg font-mono text-[10px] uppercase tracking-widest transition-colors text-[#141414]">
+                    SELECT ALL
+                  </button>
+                  <button
+                    onClick={handleDownloadReport}
+                    className="px-4 py-2 rounded-lg font-mono text-[10px] uppercase tracking-widest transition-all flex items-center gap-2 bg-blue-600 text-white hover:bg-blue-700 shadow-lg shadow-blue-600/20"
+                  >
+                    <Download size={12} /> EXPORT PDF
+                  </button>
+                  <button 
+                    onClick={handleDeleteSelected}
+                    disabled={selectedFiles.size === 0 || isDeleting}
+                    className={`px-4 py-2 rounded-lg font-mono text-[10px] uppercase tracking-widest transition-all flex items-center gap-2 ${selectedFiles.size > 0 ? 'bg-red-600 text-white hover:bg-[#9a3d3b] shadow-lg shadow-[#B86A6A]/20' : 'bg-[#141414]/5 text-[#141414]/40 cursor-not-allowed border border-[#141414]/10'}`}
+                  >
+                    <Trash2 size={12} /> PURGE ({selectedFiles.size})
+                  </button>
+                </div>
+              </div>
+
               {paginatedDuplicates.map((group, idx) => {
                 const clusterIndex = (currentPage - 1) * groupsPerPage + idx + 1;
                 const totalClusterSize = group.size * group.files.length;
@@ -546,63 +639,64 @@ export default function Dashboard() {
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: Math.min(idx * 0.05, 0.5) }}
                   key={group.hash} 
-                  className="bg-white/5 backdrop-blur-sm border border-white/10 rounded-2xl overflow-visible hover:border-[#141414]/10 hover:shadow-xl transition-all duration-300 group/card border-l-[3px] border-l-[#f5e7c1]"
+                  className="bg-white/5 backdrop-blur-sm border border-white/10 rounded-3xl overflow-visible hover:border-[#141414]/10 hover:shadow-xl transition-all duration-300 group/card border-l-[3px] border-l-[#f5e7c1]"
                 >
                   {/* Cluster Header */}
                   <div className="px-5 pt-5 pb-4 border-b border-[#141414]/10">
-                    <div className="flex items-center justify-between gap-4">
+                    <div className="flex items-start justify-between gap-4">
                       <div className="min-w-0 flex-1">
                         <div className="font-mono text-[10px] uppercase tracking-widest opacity-60">Cluster #{clusterIndex}</div>
                         <div className="font-mono text-[11px] opacity-50 mt-1">
                           {duplicateCount + 1} identical files • {formatBytes(totalClusterSize)} total
                         </div>
                       </div>
-                      <div className="group/hash relative cursor-help hidden sm:flex shrink-0">
-                        <div className="font-mono text-[10px] opacity-40 hover:opacity-100 transition-opacity bg-[#141414]/5 px-2 py-1 rounded flex items-center gap-1">
-                          <Hash size={10} /> {group.hash.substring(0,6)}...
+                      <details className="hidden sm:block shrink-0">
+                        <summary className="list-none cursor-pointer font-mono text-[10px] uppercase tracking-widest opacity-40 hover:opacity-100 transition-opacity bg-[#141414]/5 px-3 py-1.5 rounded-lg">
+                          Hash
+                        </summary>
+                        <div className="mt-2 bg-[#141414] text-white p-3 rounded-lg shadow-xl z-50 text-xs font-mono max-w-[360px]">
+                          <div className="opacity-50 mb-1 uppercase tracking-widest text-[9px]">Cluster Hash</div>
+                          <div className="break-all leading-relaxed">{group.hash}</div>
                         </div>
-                        <div className="absolute right-0 top-full mt-2 hidden group-hover/hash:block bg-[#141414] text-white p-3 rounded-lg shadow-xl z-50 text-xs whitespace-nowrap font-mono">
-                          {group.hash}
-                        </div>
-                      </div>
+                      </details>
                     </div>
                   </div>
 
                   {/* Original File Row */}
-                  <div className="p-5 flex items-center justify-between border-b border-[#141414]/10 bg-white/10">
-                    <div className="flex items-center gap-4 min-w-0 flex-1">
-                      <div className="bg-[#141414] text-[#E4E3E0] text-[9px] font-mono px-2 py-1 rounded shadow-sm tracking-widest shrink-0">ORIGINAL</div>
-                      <div className={`p-2 rounded-lg shadow-sm bg-white/40 ${getCategoryTone(group.category)} shrink-0`}>
+                  <div className="p-4 flex items-start justify-between gap-4 border-b border-[#141414]/10 bg-white/10">
+                    <div className="flex items-start gap-4 min-w-0 flex-1">
+                      <div className="bg-[#141414] text-[#E4E3E0] text-[9px] font-mono px-2 py-1 rounded shadow-sm tracking-widest shrink-0 mt-1">ORIGINAL</div>
+                      <div className={`p-2 rounded-lg shadow-sm bg-white/40 ${getCategoryTone(group.category)} shrink-0 mt-1`}>
                         {getCategoryIcon(group.category, 16)}
                       </div>
                       <div className="min-w-0 flex-1">
                         <div className="font-semibold text-sm truncate text-[#141414]">{group.files[0].name}</div>
-                        <div className="font-mono text-[10px] opacity-50 mt-1">
+                        <div className="font-mono text-[9px] opacity-50 mt-0.5">
                           {formatBytes(group.size)} • {group.files[0].category}
                         </div>
-                        <div className="font-mono text-[10px] opacity-40 mt-1 flex items-center gap-1 min-w-0">
+                        <div className="font-mono text-[9px] opacity-40 mt-1 flex items-center gap-1 min-w-0">
                           <MapPin size={10} className="shrink-0" />
-                          <span className="truncate">{group.files[0].path}</span>
+                          <span className="truncate max-w-[420px]">{group.files[0].path}</span>
                         </div>
                       </div>
                     </div>
-                    <div className="flex items-center gap-3 shrink-0 pl-4">
+                    <div className="flex items-start gap-3 shrink-0 pl-4">
                       <div className="flex flex-col items-end">
-                        <span className="font-mono text-[9px] uppercase tracking-widest opacity-40 mb-1">Reclaimable</span>
+                        <span className="font-mono text-[8px] uppercase tracking-widest opacity-40 mb-1">Reclaimable</span>
                         <span className="text-green-700 font-bold bg-green-500/10 px-3 py-1 rounded-full text-xs font-mono shadow-sm border border-green-500/20">
                           {formatBytes(group.size * duplicateCount)}
                         </span>
                       </div>
-                      <div className="hidden sm:flex items-center gap-2">
-                        {['Open', 'Reveal', 'Hash'].map(action => (
-                          <button
-                            key={action}
-                            onClick={(e) => e.stopPropagation()}
-                            className="px-3 py-1 rounded-full text-[10px] font-mono uppercase tracking-widest border border-[#141414]/15 text-[#141414]/60 hover:text-[#141414] hover:border-[#D6B98C] hover:bg-[#141414]/5 transition-colors"
-                          >
-                            {action}
-                          </button>
-                        ))}
+                      <div className="hidden sm:flex items-center gap-2 pt-1">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleFileAction('Reveal', group.files[0].path);
+                          }}
+                          className="px-3 py-1 rounded-full text-[10px] font-mono uppercase tracking-widest border border-[#141414]/15 text-[#141414]/60 hover:text-[#141414] hover:border-[#D6B98C] hover:bg-[#141414]/5 transition-colors cursor-pointer"
+                        >
+                          Reveal
+                        </button>
                       </div>
                     </div>
                   </div>
@@ -612,13 +706,13 @@ export default function Dashboard() {
                     {group.files.slice(1).map(file => (
                       <div 
                         key={file.path} 
-                        className={`p-4 pl-5 flex items-center justify-between transition-colors cursor-pointer border-l-4 
+                        className={`p-4 pl-5 flex items-start justify-between gap-4 transition-colors cursor-pointer border-l-4 
                           ${selectedFilePreview?.file.path === file.path ? 'bg-[#141414]/5 border-[#D6B98C]' : 'border-transparent hover:bg-white/10 hover:border-[#141414]/10'}`}
                         onClick={() => setSelectedFilePreview({file, group})}
                       >
-                        <div className="flex items-center gap-4 min-w-0 flex-1">
+                        <div className="flex items-start gap-4 min-w-0 flex-1">
                           <div
-                            className="relative flex items-center justify-center min-w-[42px]"
+                            className="relative flex items-center justify-center min-w-[42px] mt-1"
                             onClick={(e) => { e.stopPropagation(); toggleSelection(file.path); }}
                           >
                             <input 
@@ -630,7 +724,7 @@ export default function Dashboard() {
                             {selectedFiles.has(file.path) && <motion.div layoutId={`check-${file.path}`} className="absolute inset-0 bg-[#141414]/20 rounded-full blur-sm" />}
                           </div>
                           
-                          <div className={`p-2 rounded-lg bg-white/40 ${getCategoryTone(file.category)}`}>
+                          <div className={`p-2 rounded-lg bg-white/40 mt-1 ${getCategoryTone(file.category)}`}>
                             {getCategoryIcon(file.category, 14)}
                           </div>
 
@@ -641,20 +735,20 @@ export default function Dashboard() {
                             </div>
                             <div className="font-mono text-[10px] opacity-40 mt-1 flex items-center gap-1 min-w-0">
                               <MapPin size={10} className="shrink-0" />
-                              <span className="truncate">{file.path}</span>
+                              <span className="truncate max-w-[420px]">{file.path}</span>
                             </div>
                           </div>
                         </div>
-                        <div className="shrink-0 pl-4 flex items-center gap-2">
-                          {['Open', 'Reveal', 'Hash'].map(action => (
-                            <button
-                              key={action}
-                              onClick={(e) => e.stopPropagation()}
-                              className="px-3 py-1 rounded-full text-[10px] font-mono uppercase tracking-widest border border-[#141414]/15 text-[#141414]/60 hover:text-[#141414] hover:border-[#D6B98C] hover:bg-[#141414]/5 transition-colors"
-                            >
-                              {action}
-                            </button>
-                          ))}
+                        <div className="shrink-0 pl-4 flex items-start gap-2 pt-1">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleFileAction('Reveal', file.path);
+                            }}
+                            className="px-3 py-1 rounded-full text-[10px] font-mono uppercase tracking-widest border border-[#141414]/15 text-[#141414]/60 hover:text-[#141414] hover:border-[#D6B98C] hover:bg-[#141414]/5 transition-colors cursor-pointer"
+                          >
+                            Reveal
+                          </button>
                           <ChevronRight size={16} className={`transition-all ${selectedFilePreview?.file.path === file.path ? 'opacity-100 text-[#141414] translate-x-1' : 'opacity-20'}`} />
                         </div>
                       </div>
@@ -720,7 +814,7 @@ export default function Dashboard() {
           )}
         </div>
 
-        {/* 7. PREVIEW PANEL (Right Side Drawer) */}
+        {/* 7. PREVIEW PANEL (Right Side - Part of Layout Flow) */}
         <AnimatePresence>
           {selectedFilePreview && activeTab === 'list' && (
             <motion.div 
@@ -728,7 +822,7 @@ export default function Dashboard() {
               animate={{ x: 0, opacity: 1 }}
               exit={{ x: 400, opacity: 0 }}
               transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-              className="hidden md:flex w-[340px] fixed right-8 top-32 bottom-12 bg-white/40 text-[#141414] rounded-2xl shadow-2xl border border-[#D6B98C]/30 p-6 flex-col z-40 overflow-hidden"
+              className="hidden md:flex w-[340px] flex-shrink-0 bg-white/40 text-[#141414] rounded-2xl shadow-2xl border border-[#D6B98C]/30 p-6 flex-col z-30 overflow-hidden h-fit sticky top-32"
             >
               <div className="flex justify-between items-start mb-6 pb-6 border-b border-[#141414]/10">
                  <div className="flex items-center gap-3">
@@ -853,14 +947,14 @@ export default function Dashboard() {
 
 function StatCard({ icon, label, value, accent, supportText }: { icon: React.ReactNode, label: string, value: string | number, accent?: boolean, supportText?: string }) {
   return (
-    <div className="border border-[#141414]/10 p-6 rounded-xl bg-white/40 hover:bg-[#141414]/5 transition-all shadow-sm">
-      <div className="flex items-center gap-2 opacity-50 mb-3">
+    <div className="border border-[#141414]/10 p-4 rounded-xl min-h-[115px] bg-white/40 hover:bg-[#141414]/5 transition-all shadow-sm">
+      <div className="flex items-center gap-2 opacity-50 mb-2">
         {icon}
-        <span className="text-[10px] font-mono uppercase tracking-widest">{label}</span>
+        <span className="text-[9px] font-mono uppercase tracking-widest">{label}</span>
       </div>
-      <div className={`text-3xl font-serif italic ${accent ? 'text-green-700' : 'text-[#141414]'}`}>{value}</div>
+      <div className={`text-2xl font-serif italic ${accent ? 'text-green-700' : 'text-[#141414]'}`}>{value}</div>
       {supportText && (
-        <div className="mt-2 text-[10px] font-mono uppercase tracking-widest opacity-50">
+        <div className="mt-1.5 text-[9px] font-mono uppercase tracking-widest opacity-50">
           {supportText}
         </div>
       )}

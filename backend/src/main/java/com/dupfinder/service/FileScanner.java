@@ -10,6 +10,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import com.dupfinder.model.FileRecord;
+import com.dupfinder.engine.SystemFolderFilter;
 
 /**
  * Service responsible for scanning directories and collecting file metadata.
@@ -20,9 +21,10 @@ public class FileScanner {
      * Recursively scans a directory and returns a list of FileRecord objects.
      * 
      * @param startPath The directory to start scanning from.
+     * @param excludeSystemFolders Whether to exclude system folders (for C: drive safety).
      * @return A list of FileRecord objects representing the files found.
      */
-    public List<FileRecord> scan(Path startPath) {
+    public List<FileRecord> scan(Path startPath, boolean excludeSystemFolders) {
         List<FileRecord> fileRecords = new ArrayList<>();
 
         if (!Files.isDirectory(startPath)) {
@@ -44,6 +46,12 @@ public class FileScanner {
                         return FileVisitResult.CONTINUE; // Root directory (like D:\), we should scan it
                     }
                     String dirName = fileName.toString();
+                    
+                    // SMART FILTER: Skip system folders if enabled (for C: drive safety)
+                    if (excludeSystemFolders && SystemFolderFilter.containsSystemFolder(dir.toString())) {
+                        System.out.println("⊘ Skipping system folder: " + dirName);
+                        return FileVisitResult.SKIP_SUBTREE;
+                    }
                     
                     // Skip hidden directories (like .git, .next, .idea) and common build/dependency folders
                     if (dirName.startsWith(".") || dirName.equals("node_modules") || dirName.equals("build") 

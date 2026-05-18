@@ -25,6 +25,7 @@ import SystemMonitor from './components/SystemMonitor';
 import StorageRadar from './components/StorageRadar';
 import JunkSweeper from './components/JunkSweeper';
 import SmartOrganizer from './components/SmartOrganizer';
+import DriveGuardWidget from './components/DriveGuardWidget';
 
 export type View = 'monitor' | 'dashboard' | 'radar' | 'junk' | 'organizer' | 'history' | 'settings';
 
@@ -137,7 +138,7 @@ export default function App() {
             scale: activeView === 'dashboard' ? 1 : 0.98
           }}
           transition={{ duration: 0.2 }}
-          className={`absolute inset-0 px-9 py-8 max-w-[1400px] mx-auto overflow-auto pr-12 ${activeView === 'dashboard' ? 'pointer-events-auto z-10' : 'pointer-events-none z-0'}`}
+          className={`absolute inset-0 px-8 py-8 max-w-full overflow-auto ${activeView === 'dashboard' ? 'pointer-events-auto z-10' : 'pointer-events-none z-0'}`}
         >
           <Dashboard />
         </motion.div>
@@ -202,6 +203,9 @@ export default function App() {
           <SettingsView />
         </motion.div>
       </main>
+
+      {/* ── Floating Drive Guard Widget — always visible on every page ── */}
+      <DriveGuardWidget />
     </div>
   );
 }
@@ -210,7 +214,7 @@ function NavItem({ icon, label, active, onClick }: {
   icon: React.ReactNode, 
   label: string, 
   active?: boolean, 
-  onClick: () => void 
+  onClick: () => void
 }) {
   return (
     <button 
@@ -225,7 +229,7 @@ function NavItem({ icon, label, active, onClick }: {
       {active && (
         <motion.div 
           layoutId="active-indicator"
-          className="absolute right-2 w-1.5 h-1.5 rounded-full bg-[#E4E3E0]" 
+          className="absolute right-2 w-1.5 h-1.5 rounded-full bg-[#E4E3E0]"
         />
       )}
     </button>

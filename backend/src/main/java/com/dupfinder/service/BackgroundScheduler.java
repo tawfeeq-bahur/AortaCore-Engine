@@ -41,7 +41,7 @@ public class BackgroundScheduler {
                 }
 
                 ProgressTracker.reset(); // Reset global tracker
-                Map<String, List<FileRecord>> duplicates = engine.findDuplicates(startPath);
+                Map<String, List<FileRecord>> duplicates = engine.findDuplicates(startPath, true);  // Smart filter enabled for scheduled scans
                 
                 AtomicLong totalWastedSize = new AtomicLong(0);
                 int groups = 0;

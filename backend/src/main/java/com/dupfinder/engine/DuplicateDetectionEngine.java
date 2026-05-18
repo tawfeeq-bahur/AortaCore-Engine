@@ -24,11 +24,12 @@ public class DuplicateDetectionEngine {
      * Finds duplicate files in a given directory using a highly optimized process.
      *
      * @param directory The starting directory path.
+     * @param excludeSystemFolders Whether to exclude system folders (for C: drive safety).
      * @return A map where the key is the hash and the value is a list of duplicate FileRecords.
      */
-    public Map<String, List<FileRecord>> findDuplicates(Path directory) {
+    public Map<String, List<FileRecord>> findDuplicates(Path directory, boolean excludeSystemFolders) {
         System.out.println("Step 1: Scanning directory -> " + directory);
-        List<FileRecord> allFiles = fileScanner.scan(directory);
+        List<FileRecord> allFiles = fileScanner.scan(directory, excludeSystemFolders);
         if (com.dupfinder.model.ProgressTracker.isCanceled()) {
             com.dupfinder.model.ProgressTracker.phase = "Canceled";
             return Collections.emptyMap();

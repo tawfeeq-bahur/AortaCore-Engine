@@ -1,6 +1,7 @@
 package com.dupfinder;
 
 import com.dupfinder.engine.DuplicateDetectionEngine;
+import com.dupfinder.engine.SystemFolderFilter;
 import com.dupfinder.model.FileRecord;
 import io.javalin.Javalin;
 import io.javalin.http.Context;
@@ -45,13 +46,24 @@ public class Main {
             ScanRequest req = ctx.bodyAsClass(ScanRequest.class);
             Path startPath = Paths.get(req.path);
             
+            // Set default if not specified
+            if (req.excludeSystemFolders == null) {
+                req.excludeSystemFolders = true;
+            }
+            
+            // C: Drive detection and warning
+            if (SystemFolderFilter.isCDriveRoot(req.path)) {
+                System.out.println("⚠️ WARNING: User scanning C: drive (system drive)!");
+                System.out.println("   Smart Filter: " + (req.excludeSystemFolders ? "ENABLED ✓" : "DISABLED ❌"));
+            }
+            
             if (!java.nio.file.Files.exists(startPath)) {
                 ctx.status(400).json(Map.of("error", "Directory does not exist: " + startPath));
                 return;
             }
             
             long startTime = System.currentTimeMillis();
-            Map<String, List<FileRecord>> duplicates = engine.findDuplicates(startPath);
+            Map<String, List<FileRecord>> duplicates = engine.findDuplicates(startPath, req.excludeSystemFolders);
             long endTime = System.currentTimeMillis();
 
             if (com.dupfinder.model.ProgressTracker.isCanceled()) {
@@ -79,6 +91,15 @@ public class Main {
                 startPath.toString(), 
                 com.dupfinder.model.ProgressTracker.filesScanned, 
                 serializedDuplicates.size(), 
+                totalWastedSize.get()
+            );
+            
+            // Cache scan results for PDF report generation
+            com.dupfinder.service.ScanResultCache.cacheScanResult(
+                startPath.toString(),
+                duplicates,
+                endTime - startTime,
+                com.dupfinder.model.ProgressTracker.filesScanned,
                 totalWastedSize.get()
             );
             
@@ -222,6 +243,99 @@ public class Main {
             ctx.json(Map.of("movedCount", moved));
         });
 
+        // PDF Report Generation Endpoint
+        app.get("/api/report/download", ctx -> {
+            try {
+                if (!com.dupfinder.service.ScanResultCache.hasCachedResults()) {
+                    System.err.println("No cached scan results available for PDF generation");
+                    ctx.status(400).json(Map.of("error", "No scan results available. Please run a scan first."));
+                    return;
+                }
+
+                System.out.println("Generating PDF report...");
+                String pdfPath = com.dupfinder.service.ReportGeneratorService.generateScanReport();
+                System.out.println("PDF generated at: " + pdfPath);
+                
+                java.nio.file.Path filePath = java.nio.file.Paths.get(pdfPath);
+                
+                if (!java.nio.file.Files.exists(filePath)) {
+                    System.err.println("Generated PDF file does not exist: " + pdfPath);
+                    ctx.status(500).json(Map.of("error", "PDF file was not created"));
+                    return;
+                }
+
+                byte[] fileBytes = java.nio.file.Files.readAllBytes(filePath);
+                System.out.println("PDF file size: " + fileBytes.length + " bytes");
+                
+                ctx.contentType("application/pdf");
+                ctx.header("Content-Disposition", "attachment; filename=\"" + filePath.getFileName() + "\"");
+                ctx.result(fileBytes);
+                System.out.println("PDF successfully sent to client");
+            } catch (Exception e) {
+                System.err.println("Error generating PDF report: " + e.getMessage());
+                e.printStackTrace();
+                ctx.status(500).json(Map.of("error", "Failed to generate PDF report: " + e.getMessage()));
+            }
+        });
+
+        // ── Emergency Killswitch Endpoints ────────────────────────────────────
+
+        // GET /api/system/cdrive-status — real-time C: drive health
+        app.get("/api/system/cdrive-status", ctx -> {
+            com.dupfinder.engine.DriveSpaceMonitor.DriveStatus s =
+                com.dupfinder.engine.DriveSpaceMonitor.getCDriveStatus();
+            ctx.json(Map.of(
+                "totalSpace",      s.totalSpace,
+                "usedSpace",       s.usedSpace,
+                "freeSpace",       s.freeSpace,
+                "percentUsed",     s.percentUsed,
+                "percentFree",     s.percentFree,
+                "alertLevel",      s.alertLevel.toString(),
+                "isEmergency",     s.isEmergency,
+                "formattedFree",   s.formattedFree,
+                "formattedUsed",   s.formattedUsed,
+                "formattedTotal",  s.formattedTotal
+            ));
+        });
+
+        // GET /api/system/processes-using-cdrive — top processes by C: footprint
+        app.get("/api/system/processes-using-cdrive", ctx -> {
+            var processes = com.dupfinder.engine.ProcessMonitor.getProcessesUsingCDrive();
+            var mapped = processes.stream().map(p -> {
+                java.util.Map<String, Object> m = new java.util.LinkedHashMap<>();
+                m.put("pid",            p.pid);
+                m.put("name",           p.name);
+                m.put("memoryBytes",    p.memoryBytes);
+                m.put("cDriveEstimate", p.cDriveEstimate);
+                m.put("isCritical",     p.isCritical);
+                m.put("status",         p.status);
+                return m;
+            }).toList();
+            ctx.json(Map.of(
+                "processes",       mapped,
+                "totalCount",      mapped.size()
+            ));
+        });
+
+        // POST /api/emergency/killswitch — ACTIVATE emergency mode
+        app.post("/api/emergency/killswitch", ctx -> {
+            System.out.println("🚨 Emergency Killswitch ACTIVATION requested!");
+            var result = com.dupfinder.engine.EmergencyKillswitch.activate();
+            ctx.json(result);
+        });
+
+        // POST /api/emergency/killswitch/deactivate — DEACTIVATE & resume processes
+        app.post("/api/emergency/killswitch/deactivate", ctx -> {
+            System.out.println("🟢 Emergency Killswitch DEACTIVATION requested!");
+            var result = com.dupfinder.engine.EmergencyKillswitch.deactivate();
+            ctx.json(result);
+        });
+
+        // GET /api/emergency/status — check if killswitch is currently active
+        app.get("/api/emergency/status", ctx -> {
+            ctx.json(com.dupfinder.engine.EmergencyKillswitch.getStatus());
+        });
+
         System.out.println("Server running on http://localhost:8080");
     }
 
@@ -236,6 +350,11 @@ public class Main {
 
     public static class ScanRequest {
         public String path;
+        public Boolean excludeSystemFolders;
+        
+        public ScanRequest() {
+            this.excludeSystemFolders = true;  // Default: enabled
+        }
     }
 
     public static class DeleteRequest {
