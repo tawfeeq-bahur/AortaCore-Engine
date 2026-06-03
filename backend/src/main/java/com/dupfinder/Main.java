@@ -1,5 +1,6 @@
 package com.dupfinder;
 
+import com.aortacore.identity.ProjectIdentity;
 import com.dupfinder.engine.DuplicateDetectionEngine;
 import com.dupfinder.engine.SystemFolderFilter;
 import com.dupfinder.model.FileRecord;
@@ -12,7 +13,8 @@ import java.util.Map;
 
 public class Main {
     public static void main(String[] args) {
-        System.out.println("Starting Duplicate Finder API Server...");
+        System.out.println("Starting " + ProjectIdentity.PROJECT_NAME + " API Server...");
+        System.out.println("Identity signature: " + ProjectIdentity.ENGINE_SIGNATURE);
         com.dupfinder.service.DatabaseService.init();
         
         Javalin app = Javalin.create(config -> {
@@ -169,6 +171,17 @@ public class Main {
             com.dupfinder.service.BackgroundScheduler.configureSchedule(req.mode, req.path);
             ctx.json(Map.of("status", "success", "mode", req.mode, "path", req.path));
         });
+
+        app.get("/api/about", ctx -> {
+            ctx.json(Map.of(
+                "projectName", ProjectIdentity.PROJECT_NAME,
+                "owner", ProjectIdentity.OWNER,
+                "signature", ProjectIdentity.ENGINE_SIGNATURE,
+                "groupId", ProjectIdentity.MAVEN_GROUP_ID,
+                "namespace", ProjectIdentity.class.getPackageName(),
+                "buildLine", ProjectIdentity.BUILD_LINE
+            ));
+        });
         
         com.dupfinder.engine.StorageRadarEngine radarEngine = new com.dupfinder.engine.StorageRadarEngine();
         app.post("/api/radar", ctx -> {
@@ -201,18 +214,11 @@ public class Main {
                 ctx.status(409).json(Map.of("error", "Scan canceled"));
                 return;
             }
-            List<Map<String, Object>> mappedJunk = junkFiles.stream().map(record -> {
-                String cat = "Temp File";
-                if (record.getPath().toString().endsWith(".log")) cat = "Log File";
-                else if (record.getPath().toString().endsWith(".bak") || record.getPath().toString().endsWith(".old")) cat = "Backup File";
-                else if (record.getPath().toString().contains("Cache")) cat = "Cache";
-                
-                return Map.<String, Object>of(
-                    "path", record.getPath().toString(),
-                    "size", record.getSize(),
-                    "category", cat
-                );
-            }).toList();
+            List<Map<String, Object>> mappedJunk = junkFiles.stream().map(record -> Map.<String, Object>of(
+                "path", record.getPath().toString(),
+                "size", record.getSize(),
+                "category", record.getCategory()
+            )).toList();
             
             ctx.json(Map.of("junkFiles", mappedJunk));
         });

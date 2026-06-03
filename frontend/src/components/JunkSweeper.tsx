@@ -24,6 +24,13 @@ export default function JunkSweeper() {
   const scanRunRef = React.useRef(0);
   const cancelRequestedRef = React.useRef(false);
 
+  // Live deletion feed state
+  const [deletionFeed, setDeletionFeed] = useState<{path: string; size: number; status: 'deleting' | 'deleted' | 'failed'}[]>([]);
+  const [deletedCount, setDeletedCount] = useState(0);
+  const [deletedBytes, setDeletedBytes] = useState(0);
+  const [totalToDelete, setTotalToDelete] = useState(0);
+  const [currentBatchFile, setCurrentBatchFile] = useState('');
+
   useEffect(() => {
     let interval: NodeJS.Timeout;
     if (isScanning || isCleaning) {
@@ -86,31 +93,81 @@ export default function JunkSweeper() {
     setIsCleaning(true);
     setErrorMsg('');
     setFailedPaths([]);
+    setDeletionFeed([]);
+    setDeletedCount(0);
+    setDeletedBytes(0);
+    setTotalToDelete(files.length);
+    setCurrentBatchFile('');
+
+    const BATCH_SIZE = 25;
+    const allFiles = [...files];
+    let totalDeleted = 0;
+    let totalBytesFreed = 0;
+    const allFailed: string[] = [];
+    const allDeletedPaths = new Set<string>();
+
     try {
-      const totalBytes = files.reduce((acc, f) => acc + f.size, 0);
-      const res = await fetch('http://localhost:8080/api/delete', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          paths: files.map(f => f.path),
-          moveToTrash: true, // Safety first, move to recycle bin
-          forceDelete,
-          bytesRecovered: totalBytes
-        }),
-      });
-      if (res.ok) {
-        const data = await res.json();
-        if (data.deletedCount > 0) {
-          const deletedSet = new Set(data.deletedPaths || []);
-          const remaining = files.filter(f => !deletedSet.has(f.path));
-          setFiles(remaining);
-        } else {
-          setErrorMsg('No files were deleted. Some items may be locked or require admin access.');
+      for (let i = 0; i < allFiles.length; i += BATCH_SIZE) {
+        const batch = allFiles.slice(i, i + BATCH_SIZE);
+        const batchBytes = batch.reduce((acc, f) => acc + f.size, 0);
+
+        // Show files entering the deletion feed as "deleting"
+        setCurrentBatchFile(batch[0]?.path || '');
+        setDeletionFeed(prev => [
+          ...batch.map(f => ({ path: f.path, size: f.size, status: 'deleting' as const })),
+          ...prev,
+        ].slice(0, 50));
+
+        try {
+          const res = await fetch('http://localhost:8080/api/delete', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              paths: batch.map(f => f.path),
+              moveToTrash: !forceDelete,
+              forceDelete,
+              bytesRecovered: batchBytes
+            }),
+          });
+
+          if (res.ok) {
+            const data = await res.json();
+            const deletedSet = new Set(data.deletedPaths || []);
+            const failedSet = new Set(data.failedPaths || []);
+
+            totalDeleted += data.deletedCount || 0;
+            totalBytesFreed += batch.filter(f => deletedSet.has(f.path)).reduce((a, f) => a + f.size, 0);
+            data.deletedPaths?.forEach((p: string) => allDeletedPaths.add(p));
+            if (data.failedPaths) allFailed.push(...data.failedPaths);
+
+            // Update feed items to show deleted/failed status
+            setDeletionFeed(prev => prev.map(item => {
+              if (deletedSet.has(item.path)) return { ...item, status: 'deleted' as const };
+              if (failedSet.has(item.path)) return { ...item, status: 'failed' as const };
+              return item;
+            }));
+
+            setDeletedCount(totalDeleted);
+            setDeletedBytes(totalBytesFreed);
+          }
+        } catch (err) {
+          console.error('Batch delete error:', err);
         }
-        if (data.failedCount > 0) {
-          setFailedPaths(data.failedPaths || []);
-          setErrorMsg('Some files could not be deleted. Close apps using them and try again.');
-        }
+
+        // Small delay between batches for visual effect
+        await new Promise(r => setTimeout(r, 80));
+      }
+
+      // Final state update
+      const remaining = allFiles.filter(f => !allDeletedPaths.has(f.path));
+      setFiles(remaining);
+
+      if (totalDeleted === 0) {
+        setErrorMsg('No files were deleted. Some items may be locked or require admin access.');
+      }
+      if (allFailed.length > 0) {
+        setFailedPaths(allFailed);
+        setErrorMsg(`Cleaned ${totalDeleted} files (${formatBytes(totalBytesFreed)}). ${allFailed.length} files could not be deleted.`);
       }
     } catch (err) {
       console.error(err);
@@ -251,7 +308,7 @@ export default function JunkSweeper() {
 
       {/* Progress Monitor */}
       <AnimatePresence>
-        {(isScanning || isCleaning) && (
+        {isScanning && (
           <motion.div 
             initial={{ opacity: 0, height: 0 }}
             animate={{ opacity: 1, height: 'auto' }}
@@ -259,7 +316,7 @@ export default function JunkSweeper() {
             className="bg-[#141414]/5 border border-[#141414]/10 rounded-lg p-6 font-mono text-xs overflow-hidden"
           >
             <div className="flex justify-between uppercase text-[#141414] font-bold mb-3">
-              <span className="flex items-center gap-2"><ShieldAlert size={14} className="animate-pulse" /> {isCleaning ? "ERASING JUNK" : (cancelRequested ? "CANCELING SCAN" : "SCANNING DIRECTORIES")}</span>
+              <span className="flex items-center gap-2"><ShieldAlert size={14} className="animate-pulse" /> {cancelRequested ? "CANCELING SCAN" : "SCANNING DIRECTORIES"}</span>
               <span>{progress ? `${formatBytes(progress.bytesScanned)} PROCESSED` : 'WORKING...'}</span>
             </div>
             <div className="w-full h-2 bg-[#141414]/10 rounded-full overflow-hidden mb-3">
@@ -270,6 +327,99 @@ export default function JunkSweeper() {
               />
             </div>
             <div className="truncate opacity-50 text-[10px] text-[#141414]">Target: {progress?.currentFile || 'Preparing scan...'}</div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Live Deletion Feed */}
+      <AnimatePresence>
+        {isCleaning && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            className="rounded-xl border-2 border-red-500/30 bg-[#141414] text-[#E4E3E0] p-6 overflow-hidden shadow-[0_0_30px_rgba(220,38,38,0.15)]"
+          >
+            {/* Header Stats */}
+            <div className="flex justify-between items-center mb-4">
+              <div className="flex items-center gap-3">
+                <motion.div
+                  animate={{ rotate: 360 }}
+                  transition={{ repeat: Infinity, ease: 'linear', duration: 1.5 }}
+                >
+                  <Eraser size={18} className="text-red-400" />
+                </motion.div>
+                <div>
+                  <div className="font-mono text-xs uppercase tracking-widest text-red-400 font-bold">Live Cleanup Feed</div>
+                  <div className="font-mono text-[10px] opacity-40 mt-0.5">Erasing files in real-time</div>
+                </div>
+              </div>
+              <div className="text-right">
+                <div className="font-serif italic text-2xl text-red-400">{deletedCount}<span className="text-sm opacity-60">/{totalToDelete}</span></div>
+                <div className="font-mono text-[10px] opacity-40 uppercase">{formatBytes(deletedBytes)} freed</div>
+              </div>
+            </div>
+
+            {/* Progress Bar */}
+            <div className="w-full h-1.5 bg-white/10 rounded-full overflow-hidden mb-4">
+              <motion.div
+                className="h-full bg-gradient-to-r from-red-600 to-orange-500 shadow-[0_0_8px_rgba(239,68,68,0.6)]"
+                animate={{ width: `${totalToDelete > 0 ? (deletedCount / totalToDelete) * 100 : 0}%` }}
+                transition={{ type: 'spring', stiffness: 50, damping: 15 }}
+              />
+            </div>
+
+            {/* Current file being processed */}
+            {currentBatchFile && (
+              <div className="flex items-center gap-2 mb-4 bg-white/5 rounded-lg px-3 py-2">
+                <motion.div
+                  animate={{ opacity: [1, 0.3, 1] }}
+                  transition={{ duration: 0.8, repeat: Infinity }}
+                  className="w-1.5 h-1.5 rounded-full bg-red-500 shadow-[0_0_6px_rgba(239,68,68,0.8)]"
+                />
+                <span className="font-mono text-[10px] opacity-60 truncate">Erasing: {currentBatchFile}</span>
+              </div>
+            )}
+
+            {/* Rolling feed */}
+            <div className="space-y-1 max-h-[200px] overflow-hidden">
+              <AnimatePresence initial={false}>
+                {deletionFeed.slice(0, 12).map((item, idx) => (
+                  <motion.div
+                    key={item.path}
+                    initial={{ opacity: 0, x: -30, height: 0 }}
+                    animate={{ 
+                      opacity: item.status === 'deleted' ? 0.35 : item.status === 'failed' ? 0.7 : 1, 
+                      x: 0, 
+                      height: 'auto'
+                    }}
+                    exit={{ opacity: 0, x: 30, height: 0 }}
+                    transition={{ type: 'spring', stiffness: 300, damping: 25, delay: idx * 0.02 }}
+                    className={`flex items-center gap-2 py-1.5 px-2 rounded font-mono text-[10px] ${
+                      item.status === 'deleted' ? 'line-through bg-green-500/5' :
+                      item.status === 'failed' ? 'bg-red-500/10 text-red-400' :
+                      'bg-white/5'
+                    }`}
+                  >
+                    {item.status === 'deleting' && (
+                      <motion.div
+                        animate={{ scale: [1, 1.3, 1] }}
+                        transition={{ duration: 0.5, repeat: Infinity }}
+                        className="w-1.5 h-1.5 rounded-full bg-yellow-400 shadow-[0_0_4px_rgba(250,204,21,0.8)] shrink-0"
+                      />
+                    )}
+                    {item.status === 'deleted' && (
+                      <span className="text-green-400 shrink-0">✓</span>
+                    )}
+                    {item.status === 'failed' && (
+                      <span className="text-red-400 shrink-0">✗</span>
+                    )}
+                    <span className="truncate flex-1 opacity-70">{item.path.split('\\').slice(-2).join('\\')}</span>
+                    <span className="opacity-40 shrink-0">{formatBytes(item.size)}</span>
+                  </motion.div>
+                ))}
+              </AnimatePresence>
+            </div>
           </motion.div>
         )}
       </AnimatePresence>

@@ -17,6 +17,12 @@ public class FileRecord {
         this.category = determineCategory(path);
     }
 
+    public FileRecord(Path path, long size, String category) {
+        this.path = path;
+        this.size = size;
+        this.category = category;
+    }
+
     private String determineCategory(Path file) {
         String pathStr = file.toString().toLowerCase();
         String name = file.getFileName().toString().toLowerCase();

@@ -1,5 +1,6 @@
 package com.dupfinder.service;
 
+import com.aortacore.identity.ProjectIdentity;
 import com.dupfinder.model.FileRecord;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.PDPage;
@@ -114,7 +115,7 @@ public class ReportGeneratorService {
         contentStream.setFont(titleFont, 24);
         contentStream.beginText();
         contentStream.newLineAtOffset(MARGIN, yPosition);
-        contentStream.showText("AortaCore Engine - Scan Report");
+        contentStream.showText(ProjectIdentity.PROJECT_NAME + " - Scan Report");
         contentStream.endText();
 
         yPosition -= 30;

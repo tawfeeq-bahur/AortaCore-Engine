@@ -107,6 +107,10 @@ export default function App() {
             active={activeView === 'settings'} 
             onClick={() => setActiveView('settings')} 
           />
+
+          <div className="pt-4">
+            <DriveGuardWidget placement="sidebar" />
+          </div>
         </div>
 
         <div className="p-6 border-t border-[#141414]">
@@ -204,8 +208,6 @@ export default function App() {
         </motion.div>
       </main>
 
-      {/* ── Floating Drive Guard Widget — always visible on every page ── */}
-      <DriveGuardWidget />
     </div>
   );
 }

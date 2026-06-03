@@ -198,7 +198,12 @@ export default function Dashboard() {
       const response = await fetch('http://localhost:8080/api/delete', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ paths: Array.from(selectedFiles), moveToTrash, bytesRecovered: selectedSize })
+        body: JSON.stringify({
+          paths: Array.from(selectedFiles),
+          moveToTrash,
+          forceDelete: !moveToTrash,
+          bytesRecovered: selectedSize
+        })
       });
       if (response.ok) {
         const data = await response.json();

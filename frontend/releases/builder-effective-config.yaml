@@ -13,6 +13,8 @@ extraResources:
   - from: ../backend/target
     filter:
       - duplicate-file-finder-1.0-SNAPSHOT-jar-with-dependencies.jar
+  - from: ../DuplicateFileFinderFixed/runtime
+    to: runtime
 win:
   target:
     - nsis

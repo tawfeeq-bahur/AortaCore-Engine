@@ -1,11 +1,21 @@
 import React, { useState, useEffect } from 'react';
 import { Settings as SettingsIcon, Shield, Moon, Bell, Database, Clock, RefreshCw, Lock, Star, Info, Cpu, Filter, Trash2, Cloud, Folder } from 'lucide-react';
 
+type BuildIdentity = {
+  projectName: string;
+  owner: string;
+  signature: string;
+  groupId: string;
+  namespace: string;
+  buildLine: string;
+};
+
 export default function SettingsView() {
   const [scheduleMode, setScheduleMode] = useState(localStorage.getItem('scheduleMode') || 'disabled');
   const [schedulePath, setSchedulePath] = useState(localStorage.getItem('schedulePath') || 'D:\\');
   const [isScheduling, setIsScheduling] = useState(false);
   const [theme, setTheme] = useState(localStorage.getItem('appTheme') || 'light');
+  const [buildIdentity, setBuildIdentity] = useState<BuildIdentity | null>(null);
 
   const selectFolder = async () => {
     try {
@@ -23,6 +33,21 @@ export default function SettingsView() {
     localStorage.setItem('scheduleMode', scheduleMode);
     localStorage.setItem('schedulePath', schedulePath);
   }, [scheduleMode, schedulePath]);
+
+  useEffect(() => {
+    const loadBuildIdentity = async () => {
+      try {
+        const response = await fetch('http://localhost:8080/api/about');
+        if (!response.ok) return;
+        const data = await response.json() as BuildIdentity;
+        setBuildIdentity(data);
+      } catch (err) {
+        console.debug('Build identity unavailable', err);
+      }
+    };
+
+    loadBuildIdentity();
+  }, []);
 
   const handleThemeChange = (newTheme: string) => {
     // If the same theme is clicked again, default to light
@@ -182,7 +207,7 @@ export default function SettingsView() {
           <section className="space-y-4">
             <h3 className="text-[10px] font-mono uppercase tracking-[0.2em] opacity-40 flex items-center gap-2"><RefreshCw size={12}/> Updates</h3>
             <div className="bg-white/40 border border-[#141414]/10 rounded-lg p-4 space-y-3 text-sm">
-              <div className="flex justify-between items-center"><span className="opacity-70">Current Version</span><span className="font-mono font-bold">v2.0.1</span></div>
+              <div className="flex justify-between items-center"><span className="opacity-70">Current Version</span><span className="font-mono font-bold">v0.3.0</span></div>
               <button className="w-full bg-[#141414]/5 py-2 rounded text-xs font-bold hover:bg-[#141414]/10 transition-colors">Check for Updates</button>
             </div>
           </section>
@@ -198,18 +223,40 @@ export default function SettingsView() {
 
           <section className="bg-[#141414] text-[#E4E3E0] p-6 rounded-xl shadow-lg relative overflow-hidden">
             <Star className="absolute -right-4 -top-4 opacity-10" size={100} />
-            <h4 className="font-serif italic text-2xl mb-2 relative z-10">ScanDupe Pro</h4>
-            <ul className="text-xs space-y-2 opacity-80 mb-4 font-mono relative z-10">
-              <li>• AI Duplicate Detection</li>
-              <li>• Cloud Synchronization</li>
-              <li>• Unlimited Scan History</li>
-            </ul>
-            <button className="w-full bg-[#E4E3E0] text-[#141414] py-2 rounded text-xs font-bold hover:bg-white transition-colors relative z-10">Manage License</button>
+            <div className="flex items-center gap-2 mb-3 relative z-10">
+              <Info size={14} className="opacity-75" />
+              <h4 className="font-serif italic text-2xl">Build Identity</h4>
+            </div>
+            <div className="space-y-2 text-xs font-mono opacity-85 relative z-10">
+              <div className="flex items-start justify-between gap-4">
+                <span className="uppercase tracking-widest opacity-60">Project</span>
+                <span className="text-right">{buildIdentity?.projectName || 'AortaCore Engine'}</span>
+              </div>
+              <div className="flex items-start justify-between gap-4">
+                <span className="uppercase tracking-widest opacity-60">Owner</span>
+                <span className="text-right">{buildIdentity?.owner || 'Tawfeeq Bahur'}</span>
+              </div>
+              <div className="flex items-start justify-between gap-4">
+                <span className="uppercase tracking-widest opacity-60">Signature</span>
+                <span className="text-right">{buildIdentity?.signature || 'AORTACORE_TQ_ORIGINAL'}</span>
+              </div>
+              <div className="flex items-start justify-between gap-4">
+                <span className="uppercase tracking-widest opacity-60">Namespace</span>
+                <span className="text-right">{buildIdentity?.namespace || 'com.aortacore.identity'}</span>
+              </div>
+              <div className="flex items-start justify-between gap-4">
+                <span className="uppercase tracking-widest opacity-60">Group</span>
+                <span className="text-right">{buildIdentity?.groupId || 'com.aortacore'}</span>
+              </div>
+            </div>
+            <p className="text-[10px] uppercase tracking-widest opacity-60 mt-4 relative z-10">
+              {buildIdentity?.buildLine || 'Built by Tawfeeq - AortaCore Engine'}
+            </p>
           </section>
 
           <section className="bg-white/30 border border-[#141414]/10 rounded-lg p-4 space-y-3 font-mono text-[10px] uppercase opacity-60 text-center">
-            <p>ScanDupe v2.0</p>
-            <p>Powered by JavaFX • SQLite • Multithreaded Engine</p>
+            <p>AortaCore Engine v0.3.0</p>
+            <p>Powered by Electron / Java / SQLite</p>
             <p>Built for High Performance File Intelligence</p>
           </section>
           

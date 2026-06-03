@@ -15,6 +15,10 @@ interface DriveStatus {
   formattedUsed: string;
 }
 
+interface DriveGuardWidgetProps {
+  placement?: 'floating' | 'sidebar';
+}
+
 // ── alert level visual config ────────────────────────────────────────────────
 
 const LEVEL = {
@@ -232,9 +236,107 @@ function ResumeModal({
   );
 }
 
+function InlineActionPanel({
+  action,
+  count,
+  onConfirm,
+  onCancel,
+  loading,
+}: {
+  action: 'kill' | 'resume';
+  count: number;
+  onConfirm: () => void;
+  onCancel: () => void;
+  loading: boolean;
+}) {
+  const isKill = action === 'kill';
+  const borderColor = isKill ? 'rgba(239,68,68,0.32)' : 'rgba(52,211,153,0.32)';
+  const tint = isKill ? 'rgba(239,68,68,0.08)' : 'rgba(52,211,153,0.08)';
+  const accent = isKill ? '#f87171' : '#34d399';
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 8, height: 0 }}
+      animate={{ opacity: 1, y: 0, height: 'auto' }}
+      exit={{ opacity: 0, y: 6, height: 0 }}
+      transition={{ duration: 0.2 }}
+      style={{
+        marginTop: 10,
+        padding: '12px',
+        borderRadius: 12,
+        background: tint,
+        border: `1px solid ${borderColor}`,
+        boxShadow: isKill ? '0 0 18px rgba(239,68,68,0.12)' : '0 0 18px rgba(52,211,153,0.12)',
+      }}
+    >
+      <div style={{ textAlign: 'center', marginBottom: 14 }}>
+        <div style={{ fontFamily: 'monospace', fontWeight: 800, fontSize: 12, color: '#f1f1f1', marginBottom: 6, letterSpacing: 1 }}>
+          {isKill ? 'ACTIVATE KILLSWITCH?' : 'RESUME PROCESSES?'}
+        </div>
+        <div style={{ fontFamily: 'monospace', fontSize: 10, color: 'rgba(255,255,255,0.45)', lineHeight: 1.55 }}>
+          {isKill ? (
+            <>
+              This will <span style={{ color: '#f87171', fontWeight: 600 }}>suspend all non-critical processes</span>
+              <br />
+              consuming C: drive space.
+            </>
+          ) : (
+            <>
+              <span style={{ color: '#34d399', fontWeight: 600 }}>{count} suspended process{count !== 1 ? 'es' : ''}</span>
+              <br />
+              will be resumed and return to normal operation.
+            </>
+          )}
+        </div>
+      </div>
+
+      <div style={{ display: 'flex', gap: 8 }}>
+        <motion.button
+          whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
+          onClick={onCancel}
+          disabled={loading}
+          style={{
+            flex: 1, padding: '9px 0', borderRadius: 10,
+            background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.12)',
+            color: 'rgba(255,255,255,0.6)', fontFamily: 'monospace', fontSize: 10,
+            fontWeight: 600, cursor: 'pointer', letterSpacing: 1,
+          }}
+        >
+          CANCEL
+        </motion.button>
+        <motion.button
+          whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
+          onClick={onConfirm}
+          disabled={loading}
+          style={{
+            flex: 1, padding: '9px 0', borderRadius: 10,
+            background: isKill ? (loading ? 'rgba(239,68,68,0.4)' : '#dc2626') : '#059669',
+            border: `1px solid ${isKill ? 'rgba(239,68,68,0.5)' : 'rgba(52,211,153,0.5)'}`,
+            color: '#fff', fontFamily: 'monospace', fontSize: 10,
+            fontWeight: 700, cursor: loading ? 'not-allowed' : 'pointer',
+            letterSpacing: 1, display: 'flex', alignItems: 'center',
+            justifyContent: 'center', gap: 6,
+            boxShadow: isKill ? '0 0 12px rgba(239,68,68,0.28)' : 'none',
+          }}
+        >
+          {loading
+            ? <RefreshCw size={12} style={{ animation: 'spin 1s linear infinite' }} />
+            : isKill ? <Zap size={12} /> : <CheckCircle size={12} />
+          }
+          {isKill ? (loading ? 'KILLING...' : 'KILL IT') : (loading ? 'RESUMING...' : 'RESUME ALL')}
+        </motion.button>
+      </div>
+
+      <div style={{ marginTop: 8, textAlign: 'center', fontFamily: 'monospace', fontSize: 9, color: accent, letterSpacing: 0.7 }}>
+        {isKill ? 'Sidebar-safe confirmation' : `${count} process${count !== 1 ? 'es' : ''} waiting`}
+      </div>
+    </motion.div>
+  );
+}
+
 // ── main widget ───────────────────────────────────────────────────────────────
 
-export default function DriveGuardWidget() {
+export default function DriveGuardWidget({ placement = 'floating' }: DriveGuardWidgetProps) {
   const [drive, setDrive]           = useState<DriveStatus | null>(null);
   const [ksActive, setKsActive]     = useState(false);
   const [suspended, setSuspended]   = useState(0);
@@ -317,16 +419,19 @@ export default function DriveGuardWidget() {
   const lvl   = drive?.alertLevel  ?? 'GREEN';
   const cfg   = LEVEL[lvl];
   const isRed = lvl === 'RED' || lvl === 'ORANGE';
+  const isSidebar = placement === 'sidebar';
 
   // ── render ────────────────────────────────────────────────────────────────
 
   return (
     <>
       {/* ── confirmation modals ── */}
-      <AnimatePresence>
-        {modal === 'kill'   && <ConfirmModal onConfirm={handleKill}   onCancel={() => setModal(null)} loading={loading} />}
-        {modal === 'resume' && <ResumeModal  count={suspended} onConfirm={handleResume} onCancel={() => setModal(null)} loading={loading} />}
-      </AnimatePresence>
+      {!isSidebar && (
+        <AnimatePresence>
+          {modal === 'kill'   && <ConfirmModal onConfirm={handleKill}   onCancel={() => setModal(null)} loading={loading} />}
+          {modal === 'resume' && <ResumeModal  count={suspended} onConfirm={handleResume} onCancel={() => setModal(null)} loading={loading} />}
+        </AnimatePresence>
+      )}
 
       {/* ── toast ── */}
       <AnimatePresence>
@@ -364,11 +469,11 @@ export default function DriveGuardWidget() {
           boxShadow: isRed ? { duration: 2, repeat: Infinity } : { duration: 0.3 }
         }}
         style={{
-          position: 'fixed',
-          bottom: 20,
-          right: 20,
-          zIndex: 9997,
-          width: 208,
+          position: isSidebar ? 'relative' : 'fixed',
+          bottom: isSidebar ? undefined : 20,
+          right: isSidebar ? undefined : 20,
+          zIndex: isSidebar ? 1 : 9997,
+          width: isSidebar ? '100%' : 208,
           background: 'rgba(20,20,20,0.92)',
           backdropFilter: 'blur(16px)',
           WebkitBackdropFilter: 'blur(16px)',
@@ -438,8 +543,30 @@ export default function DriveGuardWidget() {
           {' '}free · {drive?.formattedUsed ?? '—'} used
         </div>
 
-        {/* ── killswitch button (always shown, urgency varies) ── */}
-        {!ksActive ? (
+        {/* ── killswitch action ── */}
+        {isSidebar && modal ? (
+          <AnimatePresence mode="wait">
+            {modal === 'kill' ? (
+              <InlineActionPanel
+                key="kill-inline"
+                action="kill"
+                count={suspended}
+                onConfirm={handleKill}
+                onCancel={() => setModal(null)}
+                loading={loading}
+              />
+            ) : (
+              <InlineActionPanel
+                key="resume-inline"
+                action="resume"
+                count={suspended}
+                onConfirm={handleResume}
+                onCancel={() => setModal(null)}
+                loading={loading}
+              />
+            )}
+          </AnimatePresence>
+        ) : !ksActive ? (
           <motion.button
             whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.96 }}
             onClick={() => setModal('kill')}
