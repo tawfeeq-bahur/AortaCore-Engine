@@ -15,6 +15,8 @@ import {
   AlertCircle,
   Target,
   Eraser,
+  Eye,
+  Zap,
   FolderTree
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -25,9 +27,11 @@ import SystemMonitor from './components/SystemMonitor';
 import StorageRadar from './components/StorageRadar';
 import JunkSweeper from './components/JunkSweeper';
 import SmartOrganizer from './components/SmartOrganizer';
+import FolderAccessTracker from './components/FolderAccessTracker';
 import DriveGuardWidget from './components/DriveGuardWidget';
+import PerformanceBooster from './components/PerformanceBooster';
 
-export type View = 'monitor' | 'dashboard' | 'radar' | 'junk' | 'organizer' | 'history' | 'settings';
+export type View = 'monitor' | 'dashboard' | 'radar' | 'junk' | 'organizer' | 'accessTracker' | 'performance' | 'history' | 'settings';
 
 export default function App() {
   const [activeView, setActiveView] = useState<View>('monitor');
@@ -94,6 +98,18 @@ export default function App() {
             label="Smart Organizer" 
             active={activeView === 'organizer'} 
             onClick={() => setActiveView('organizer')} 
+          />
+          <NavItem 
+            icon={<Eye size={18} />} 
+            label="Drive Sentinel" 
+            active={activeView === 'accessTracker'} 
+            onClick={() => setActiveView('accessTracker')} 
+          />
+          <NavItem 
+            icon={<Zap size={18} />} 
+            label="Performance Booster" 
+            active={activeView === 'performance'} 
+            onClick={() => setActiveView('performance')} 
           />
           <NavItem 
             icon={<History size={18} />} 
@@ -181,6 +197,30 @@ export default function App() {
           className={`absolute inset-0 px-9 py-8 max-w-[1400px] mx-auto overflow-auto pr-12 ${activeView === 'organizer' ? 'pointer-events-auto z-10' : 'pointer-events-none z-0'}`}
         >
           <SmartOrganizer />
+        </motion.div>
+
+        <motion.div
+          animate={{ 
+            opacity: activeView === 'accessTracker' ? 1 : 0, 
+            y: activeView === 'accessTracker' ? 0 : 10,
+            scale: activeView === 'accessTracker' ? 1 : 0.98
+          }}
+          transition={{ duration: 0.2 }}
+          className={`absolute inset-0 px-9 py-8 max-w-[1400px] mx-auto overflow-auto pr-12 ${activeView === 'accessTracker' ? 'pointer-events-auto z-10' : 'pointer-events-none z-0'}`}
+        >
+          <FolderAccessTracker isActive={activeView === 'accessTracker'} />
+        </motion.div>
+
+        <motion.div
+          animate={{ 
+            opacity: activeView === 'performance' ? 1 : 0, 
+            y: activeView === 'performance' ? 0 : 10,
+            scale: activeView === 'performance' ? 1 : 0.98
+          }}
+          transition={{ duration: 0.2 }}
+          className={`absolute inset-0 px-9 py-8 max-w-[1400px] mx-auto overflow-auto pr-12 ${activeView === 'performance' ? 'pointer-events-auto z-10' : 'pointer-events-none z-0'}`}
+        >
+          <PerformanceBooster isActive={activeView === 'performance'} />
         </motion.div>
 
         <motion.div

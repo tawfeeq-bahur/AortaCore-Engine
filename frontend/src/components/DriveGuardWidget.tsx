@@ -349,6 +349,7 @@ export default function DriveGuardWidget({ placement = 'floating' }: DriveGuardW
   // ── fetch ─────────────────────────────────────────────────────────────────
 
   const fetchAll = useCallback(async () => {
+    if (document.hidden) return;
     try {
       const [dRes, kRes] = await Promise.all([
         fetch('http://localhost:8080/api/system/cdrive-status'),
@@ -369,7 +370,7 @@ export default function DriveGuardWidget({ placement = 'floating' }: DriveGuardW
 
   useEffect(() => {
     fetchAll();
-    const id = setInterval(fetchAll, 4000);
+    const id = setInterval(fetchAll, 10000);
     return () => clearInterval(id);
   }, [fetchAll]);
 

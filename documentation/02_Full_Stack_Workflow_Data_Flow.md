@@ -45,6 +45,6 @@ Once the app is open, the React frontend must talk to the Java backend.
 
 ## 3. Real-Time Polling (The Progress Bar)
 HTTP requests are strictly Request -> Response. Java cannot easily push data to React when it's halfway done. To animate the progress bar:
-1.  React uses `setInterval()` to fire a `GET /api/scan/progress` request every 100 milliseconds.
+1.  React uses `` to fire a `GET /api/scan/progress` request every 100 milliseconds.
 2.  Java instantly replies with the values stored in the static `ProgressTracker` class.
 3.  React updates its `useState()`, causing Framer Motion to smoothly animate the bar forward.

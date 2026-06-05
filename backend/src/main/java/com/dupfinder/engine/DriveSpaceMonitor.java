@@ -31,12 +31,20 @@ public class DriveSpaceMonitor {
 
     /** Return current C: drive status snapshot. */
     public static DriveStatus getCDriveStatus() {
-        File cDrive = new File("C:\\");
+        return getDriveStatus("C:\\");
+    }
+
+    /** Return current drive status snapshot for the specified drive path (e.g. "C:\\" or "D:\\"). */
+    public static DriveStatus getDriveStatus(String drivePath) {
+        File drive = new File(drivePath);
+        if (!drive.exists()) {
+            return null;
+        }
 
         DriveStatus s = new DriveStatus();
-        s.totalSpace   = cDrive.getTotalSpace();
-        s.freeSpace    = cDrive.getUsableSpace();          // usable (not just free)
-        s.usedSpace    = s.totalSpace - cDrive.getFreeSpace();
+        s.totalSpace   = drive.getTotalSpace();
+        s.freeSpace    = drive.getUsableSpace();          // usable (not just free)
+        s.usedSpace    = s.totalSpace - drive.getFreeSpace();
         s.percentUsed  = (s.totalSpace > 0)
                          ? (double) s.usedSpace / s.totalSpace * 100
                          : 0;

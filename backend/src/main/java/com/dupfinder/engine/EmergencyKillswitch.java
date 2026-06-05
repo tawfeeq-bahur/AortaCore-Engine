@@ -145,6 +145,43 @@ public class EmergencyKillswitch {
         return result;
     }
 
+    /**
+     * Terminate specific PIDs safely, filtering out critical system processes and our own JVM.
+     */
+    public static Map<String, Object> killSpecificPids(List<Integer> pids) {
+        System.out.println("🚨 [Killswitch] Targeted custom termination requested for PIDs: " + pids);
+
+        List<String> killed = new ArrayList<>();
+        List<String> skipped = new ArrayList<>();
+        List<String> failed = new ArrayList<>();
+
+        for (int pid : pids) {
+            String name = getProcName(pid);
+            if (isCritical(name) || pid == (int) OWN_PID) {
+                skipped.add(name + " (PID " + pid + ")");
+                System.out.println("  ⚠ Skipped protected process: " + name + " (PID " + pid + ")");
+                continue;
+            }
+
+            try {
+                killProcess(pid);
+                killed.add(name + " (PID " + pid + ")");
+                System.out.printf("  ✓ KILLED TARGETED %-30s  PID=%d%n", name, pid);
+            } catch (Exception e) {
+                failed.add(name + " (PID " + pid + ") — " + e.getMessage());
+                System.err.println("  ❌ Failed to kill process PID=" + pid + ": " + e.getMessage());
+            }
+        }
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("status", "COMPLETED");
+        result.put("killedCount", killed.size());
+        result.put("killed", killed);
+        result.put("skipped", skipped);
+        result.put("failed", failed);
+        return result;
+    }
+
     // ── internals ─────────────────────────────────────────────────────────────
 
     /** Get PIDs of top memory-using processes via PowerShell, sorted desc. */

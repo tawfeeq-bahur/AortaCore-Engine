@@ -323,8 +323,59 @@ public class Main {
             ));
         });
 
-        // POST /api/emergency/killswitch — ACTIVATE emergency mode
+        // GET /api/system/folder-access — get running applications and C: drive folders they access
+        app.get("/api/system/folder-access", ctx -> {
+            try {
+                var processes = com.dupfinder.engine.ProcessMonitor.getFolderAccessMap();
+                var mapped = processes.stream().map(p -> {
+                    java.util.Map<String, Object> m = new java.util.LinkedHashMap<>();
+                    m.put("pid",             p.pid);
+                    m.put("name",            p.name);
+                    m.put("memoryBytes",     p.memoryBytes);
+                    m.put("cDriveEstimate",  p.cDriveEstimate);
+                    m.put("isCritical",      p.isCritical);
+                    m.put("status",          p.status);
+                    m.put("category",        p.category != null ? p.category : "General Apps");
+                    m.put("accessedFolders", p.accessedFolders != null ? p.accessedFolders : List.of());
+                    return m;
+                }).toList();
+                ctx.json(Map.of(
+                    "processes",  mapped,
+                    "totalCount", mapped.size()
+                ));
+            } catch (Exception e) {
+                System.err.println("[API] /api/system/folder-access error: " + e.getMessage());
+                ctx.json(Map.of("processes", List.of(), "totalCount", 0));
+            }
+        });
+
+        // GET /api/system/sentinel-stats — get historical C and D drive sentinel storage statistics
+        app.get("/api/system/sentinel-stats", ctx -> {
+            try {
+                ctx.json(com.dupfinder.service.DatabaseService.getDriveSentinelStats());
+            } catch (Exception e) {
+                System.err.println("[API] /api/system/sentinel-stats error: " + e.getMessage());
+                ctx.json(Map.of());
+            }
+        });
+
+        // POST /api/emergency/killswitch — ACTIVATE emergency mode or terminate specific processes
         app.post("/api/emergency/killswitch", ctx -> {
+            try {
+                String body = ctx.body();
+                if (body != null && !body.trim().isEmpty() && body.contains("\"processes\"")) {
+                    KillswitchRequest req = ctx.bodyAsClass(KillswitchRequest.class);
+                    if (req.processes != null && !req.processes.isEmpty()) {
+                        System.out.println("🚨 Custom Process Kill requested via Drive Sentinel!");
+                        var result = com.dupfinder.engine.EmergencyKillswitch.killSpecificPids(req.processes);
+                        ctx.json(result);
+                        return;
+                    }
+                }
+            } catch (Exception e) {
+                System.err.println("Failed to parse custom killswitch request body: " + e.getMessage());
+            }
+
             System.out.println("🚨 Emergency Killswitch ACTIVATION requested!");
             var result = com.dupfinder.engine.EmergencyKillswitch.activate();
             ctx.json(result);
@@ -342,7 +393,43 @@ public class Main {
             ctx.json(com.dupfinder.engine.EmergencyKillswitch.getStatus());
         });
 
+        // ── Performance Booster Endpoints ────────────────────────────────────
+
+        // GET /api/performance/startup — list all startup items
+        app.get("/api/performance/startup", ctx -> {
+            ctx.json(Map.of("items", com.dupfinder.service.PerformanceService.getStartupItems()));
+        });
+
+        // POST /api/performance/startup/toggle — enable/disable startup item
+        app.post("/api/performance/startup/toggle", ctx -> {
+            PerformanceToggleRequest req = ctx.bodyAsClass(PerformanceToggleRequest.class);
+            var result = com.dupfinder.service.PerformanceService.toggleStartupItem(
+                req.name, req.command, req.location, req.user, req.enable
+            );
+            ctx.json(result);
+        });
+
+        // POST /api/performance/ram/clean — run RAM cleaner
+        app.post("/api/performance/ram/clean", ctx -> {
+            var result = com.dupfinder.service.PerformanceService.cleanMemory();
+            ctx.json(result);
+        });
+
         System.out.println("Server running on http://localhost:8080");
+    }
+
+    public static class PerformanceToggleRequest {
+        public String name;
+        public String command;
+        public String location;
+        public String user;
+        public boolean enable;
+    }
+
+    public static class KillswitchRequest {
+        public String action;
+        public List<Integer> processes;
+        public String reason;
     }
 
     public static class ExecuteOrganizerRequest {

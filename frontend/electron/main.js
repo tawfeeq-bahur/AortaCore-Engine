@@ -119,7 +119,27 @@ async function waitForBackendReady(timeoutMs = 30000) {
 
 function startJavaBackend() {
   const javaExecutable = getJavaExecutable();
-  const jarPath = getJarPath();
+  let jarPath = getJarPath();
+
+  if (isDev) {
+    if (!fs.existsSync(jarPath)) {
+      const msg = `Development backend JAR not found at:\n${jarPath}\n\nPlease run 'mvn clean package' in the backend directory to compile and package the Java backend before running the dev app.`;
+      console.error(msg);
+      dialog.showErrorBox('AortaCore Engine - Dev Mode', msg);
+      app.quit();
+      return;
+    }
+
+    try {
+      const tempDir = app.getPath('temp');
+      const tempJarPath = path.join(tempDir, 'duplicate-file-finder-dev-running.jar');
+      fs.copyFileSync(jarPath, tempJarPath);
+      jarPath = tempJarPath;
+      console.log('Copied dev JAR to temporary path to prevent locking:', tempJarPath);
+    } catch (copyErr) {
+      console.error('Failed to copy JAR to temp, running original:', copyErr);
+    }
+  }
 
   console.log('Starting Java Backend from:', jarPath);
   console.log('Using Java executable:', javaExecutable);

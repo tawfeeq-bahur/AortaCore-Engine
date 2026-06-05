@@ -19,6 +19,7 @@ export default function SystemMonitor({ isActive = true }: { isActive?: boolean 
     if (!isActive) return;
 
     const fetchMetrics = async () => {
+      if (document.hidden) return;
       try {
         const res = await fetch('http://localhost:8080/api/system/metrics');
         if (res.ok) {
@@ -35,7 +36,7 @@ export default function SystemMonitor({ isActive = true }: { isActive?: boolean 
     };
 
     fetchMetrics();
-    const interval = setInterval(fetchMetrics, 1000);
+    const interval = setInterval(fetchMetrics, 5000);
     return () => clearInterval(interval);
   }, [isActive]);
 
